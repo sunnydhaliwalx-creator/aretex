@@ -1,22 +1,22 @@
-# Leverage Fitness App
+# Aretex Pharmacy Management System
 
-Leverage Fitness App is a comprehensive fitness application designed to help users track their workouts, manage their fitness goals, and connect with a community of fitness enthusiasts.
+Aretex Pharmacy Management System is a comprehensive web application designed to help pharmacy clients efficiently manage their operations, including reviewing orders, placing new orders, and conducting stock inventory counts.
 
 ## Project Structure
 
 The project is organized into two main packages:
 
-- **API**: This package handles the backend services, including user authentication, workout tracking, and data management.
-- **Web**: This package serves the frontend application, providing a user interface for interacting with the API.
+- **API**: This package handles the backend services, including order management, inventory tracking, authentication, and data management for pharmacy operations.
+- **Web**: This package serves the frontend application, providing an intuitive user interface for pharmacy staff to manage orders and inventory.
 
 ## Getting Started
 
-To get started with the Leverage Fitness App, follow these steps:
+To get started with the Aretex Pharmacy Management System, follow these steps:
 
 1. **Clone the repository**:
    ```
-   git clone https://github.com/yourusername/leverage-fitness-app.git
-   cd leverage-fitness-app
+   git clone https://github.com/yourusername/aretex-pharmacy-app.git
+   cd aretex-pharmacy-app
    ```
 
 2. **Install dependencies**:
@@ -40,9 +40,21 @@ To get started with the Leverage Fitness App, follow these steps:
      npm start
      ```
 
+## Features
+
+- **Order Review**: View and review all orders placed for your pharmacy
+- **Order Placement**: Create and submit new orders for pharmaceutical products
+- **Inventory Management**: Conduct and track stock inventory counts
+- **Client Portal**: Secure access for pharmacy clients to manage their operations
+
 ## Usage
 
-Once the application is running, you can access the web interface at `http://localhost:3000`. Use the API endpoints to manage your fitness data.
+Once the application is running, you can access the web interface at `http://localhost:3000`. Pharmacy staff can log in to:
+
+- Review pending and completed orders
+- Place new orders for products
+- Conduct stock inventory counts
+- View order history and inventory reports
 
 ## Contributing
 
