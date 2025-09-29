@@ -169,8 +169,8 @@ export default function StockCount() {
         </div>
 
         {/* Save Button Section */}
-        <div className="row mb-3">
-          <div className="col-12 col-md-4 ms-auto">
+        <div className="row mt-2 mb-3">
+          <div className="col-12 col-md-4 col-lg-12 ms-auto">
             <button 
               className="btn btn-primary w-100"
               onClick={() => handleSave(false)}
@@ -195,12 +195,12 @@ export default function StockCount() {
         <div className="row">
           {inventoryItems.length > 0 ? (
             inventoryItems.map((item) => (
-              <div key={item.id} className="col-12 col-sm-6 col-md-4 col-lg-3 mb-2">
+              <div key={item.id} className="col-12 col-sm-6 col-md-4 col-lg-12 mb-2">
                 <div className="card h-100">
                   <div className="card-body p-3">
                     <h6 className="card-title mb-1">{item.itemName}</h6>
                     <div className="mb-0">
-                      <label className="form-label small text-muted my-0">In Stock</label>
+                      {/*<label className="form-label small text-muted my-0">In Stock</label>*/}
                       <input 
                         type="number" 
                         className="form-control form-control-lg text-center"
@@ -210,15 +210,6 @@ export default function StockCount() {
                         style={{ fontSize: '1.5rem', fontWeight: 'bold' }}
                       />
                     </div>
-                    {item.inStock !== item.originalStock && (
-                      <div className="mt-2">
-                        <small className="text-muted">
-                          Previous: {item.originalStock}
-                          <i className="bi bi-arrow-right mx-1"></i>
-                          <span className="text-primary fw-bold">{item.inStock}</span>
-                        </small>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>

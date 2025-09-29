@@ -310,7 +310,7 @@ export default function Orders() {
         <div className="table-responsive">
           <table className="table table-light table-striped table-bordered table-hover">
             <thead className="table-light">
-              <tr>
+              <tr className="text-center">
                 <th>Date</th>
                 <th>Item</th>
                 <th>Qty</th>
@@ -321,10 +321,10 @@ export default function Orders() {
             <tbody>
               {filteredOrders.map((order, index) => (
                 <tr key={index}>
-                  <td>{order.date}</td>
+                  <td className="text-center">{order.date}</td>
                   <td>{order.item}{order.brand ? ` (${order.brand})` : ''}</td>
-                  <td>{order.qty}</td>
-                  <td>
+                  <td className="text-center">{order.qty}</td>
+                  <td className="text-center">
                     <span className={`badge ${
                       order.status === 'Ordered' ? 'bg-success' :
                       order.status === 'Pending' ? 'bg-info' :
@@ -337,7 +337,7 @@ export default function Orders() {
                   <td>
                     {order.status === 'Pending' && (
                       <button 
-                        className="btn btn-sm btn-outline-secondary"
+                        className="btn btn-sm btn-outline-secondary small py-1 px-2"
                         onClick={() => handleEditClick(order, index)}
                       >
                         Edit
