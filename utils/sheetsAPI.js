@@ -721,3 +721,116 @@ export const parseClientSheetData = {
 
   
 }
+
+// Additional helper to fetch filtered orders for the Orders page
+export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Current', pharmacy = 'CLI') {
+  try {
+    if (!spreadsheetId) return [];
+
+    // Read entire sheet (client helper will call /api/googleSheets)
+    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
+
+    if (!Array.isArray(data) || data.length === 0) return [];
+
+    // Assume first row may be headers; detect if first row contains non-date in col 1
+    const rows = data.slice();
+
+    // Parse date threshold: 12 months ago
+    const now = new Date();
+    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, now.getDate());
+
+    const results = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || [];
+
+      // Column mapping (1-based): Date=col1, Pharmacy=col2, Inventory Item=col3, Qty=col4, Status=col7
+      const rawDate = row[0];
+      const rowPharmacy = (row[1] || '').toString().trim();
+
+      // Skip rows where pharmacy doesn't match
+      if (rowPharmacy !== pharmacy) continue;
+
+      // Parse date - try common formats
+      let parsedDate = null;
+      if (rawDate) {
+        // If it's a serial number (Google Sheets), it may be a number - try Date
+        if (typeof rawDate === 'number') {
+          // Excel/Sheets serial day -> JS date (Sheets uses 1899-12-30 origin)
+          parsedDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+        } else {
+          // Attempt ISO or localized parse
+          const d = new Date(rawDate);
+          if (!isNaN(d)) parsedDate = d;
+        }
+      }
+
+      // If no parsed date, skip
+      if (!parsedDate || isNaN(parsedDate)) continue;
+
+      // Keep only rows within last 12 months (>= twelveMonthsAgo)
+      if (parsedDate < twelveMonthsAgo) continue;
+
+      const inventoryItem = row[2] || '';
+      const qty = row[3] !== undefined && row[3] !== '' ? Number(row[3]) : null;
+      const status = row[6] || '';
+
+      results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status });
+    }
+
+    // Sort by date descending (newest first)
+    results.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return results;
+  } catch (error) {
+    console.error('fetchFilteredOrders error:', error);
+    return [];
+  }
+}
+
+
+
+// Fetch master items from the ProductFile worksheet
+export async function fetchMasterItems(
+  spreadsheetId = '1GIlMmpDpmZ6KzfadVn2jNJTRJSGbDtL0Yx38EHSMqro',
+  worksheetName = 'ProductFile'
+) {
+  try {
+    if (!spreadsheetId) return [];
+    
+    // Read entire sheet
+    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
+    if (!Array.isArray(data) || data.length === 0) return [];
+    
+    const rows = data.slice();
+    const results = [];
+    
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || [];
+      
+      // Column mapping (1-based): Item=col2 (index 1), Brand=col9 (index 8)
+      const item = row[1] || '';
+      const brand = row[8] || '';
+      
+      // Skip rows without an item
+      if (!item) continue;
+      
+      results.push({ item, brand });
+    }
+    
+    // Sort by item ascending (case-insensitive)
+    results.sort((a, b) => {
+      const itemA = a.item.toString().toLowerCase();
+      const itemB = b.item.toString().toLowerCase();
+      if (itemA < itemB) return -1;
+      if (itemA > itemB) return 1;
+      return 0;
+    });
+    
+    console.log('Master Products List:', results);
+    return results;
+  } catch (error) {
+    console.error('fetchMasterItems error:', error);
+    return [];
+  }
+}

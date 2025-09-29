@@ -3,6 +3,7 @@ import 'bootstrap-icons/font/bootstrap-icons.css'; // Bootstrap Icons
 import '../styles/custom.css'; // Your custom overrides last
 
 import { useEffect } from 'react';
+import Navbar from '../components/Navbar';
 
 export default function MyApp({ Component, pageProps }) {
   useEffect(() => {
@@ -22,5 +23,10 @@ export default function MyApp({ Component, pageProps }) {
     loadBootstrap();
   }, []);
 
-  return <Component {...pageProps} />;
+  return (
+    <>
+      <Navbar />
+      <Component {...pageProps} />
+    </>
+  );
 }
