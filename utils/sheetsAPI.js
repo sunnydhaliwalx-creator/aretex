@@ -792,8 +792,8 @@ export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Curren
 
 // Fetch master items from the ProductFile worksheet
 export async function fetchMasterItems(
-  spreadsheetId = '1GIlMmpDpmZ6KzfadVn2jNJTRJSGbDtL0Yx38EHSMqro',
-  worksheetName = 'ProductFile'
+  spreadsheetId = process.env.NEXT_PUBLIC_MASTER_INVENTORY_ITEMS_GOOGLE_SPREADSHEET_ID,
+  worksheetName = process.env.NEXT_PUBLIC_MASTER_INVENTORY_ITEMS_WORKSHEET_NAME
 ) {
   try {
     if (!spreadsheetId) return [];
@@ -808,7 +808,7 @@ export async function fetchMasterItems(
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] || [];
       
-      // Column mapping (1-based): Item=col2 (index 1), Brand=col9 (index 8)
+      // Column mapping (1-based)
       const item = row[1] || '';
       const brand = row[8] || '';
       
@@ -832,5 +832,40 @@ export async function fetchMasterItems(
   } catch (error) {
     console.error('fetchMasterItems error:', error);
     return [];
+  }
+}
+
+
+// Append a single order row to the Current worksheet without overwriting formula columns
+export async function appendOrder(order, spreadsheetId = process.env.ACCOUNTS_GOOGLE_SPREADSHEET_ID, worksheetName = 'Current') {
+  try {
+    if (!spreadsheetId) throw new Error('No spreadsheetId provided for appendOrder');
+
+    // Read existing sheet to determine next row
+    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
+    const nextRow = (Array.isArray(data) ? data.length : 0) + 1; // next available 1-based row
+
+    const itemValue = order.brand ? `${order.item} (${order.brand})` : (order.item || '');
+
+    // Write columns A:D (date, pharmacyName, item, qty) using updateRange
+    const aToDValues = [[
+      order.date !== undefined ? order.date : '',
+      order.pharmacyName || '',
+      itemValue,
+      order.qty === undefined ? '' : order.qty
+    ]];
+
+    const rangeAD = `A${nextRow}:D${nextRow}`;
+    await sheetsAPI.updateRange(spreadsheetId, worksheetName, rangeAD, aToDValues);
+
+    // Write columns G (status) and H (urgent flag) together so we don't overwrite E and F
+    const urgentFlag = order.urgent ? 'Y' : '';
+    const rangeGH = `G${nextRow}:H${nextRow}`;
+    await sheetsAPI.updateRange(spreadsheetId, worksheetName, rangeGH, [['Ordered', urgentFlag]]);
+
+    return { success: true, row: nextRow };
+  } catch (error) {
+    console.error('appendOrder error:', error);
+    return { success: false, message: error.message };
   }
 }

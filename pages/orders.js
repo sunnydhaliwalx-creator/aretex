@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchFilteredOrders, fetchMasterItems } from '../utils/sheetsAPI';
+import { fetchFilteredOrders, fetchMasterItems, appendOrder } from '../utils/sheetsAPI';
 
 export default function Orders() {
   // State management
@@ -13,12 +13,16 @@ export default function Orders() {
   const [currentEditOrder, setCurrentEditOrder] = useState(null);
   const [currentEditIndex, setCurrentEditIndex] = useState(null);
   const [masterItems, setMasterItems] = useState([]);
+  const [sessionData, setSessionData] = useState(null);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorModalMessage, setErrorModalMessage] = useState('');
   
   // Form state for adding orders
   const [addDate, setAddDate] = useState('');
   const [addItem, setAddItem] = useState('');
   const [addBrand, setAddBrand] = useState('');
   const [addQty, setAddQty] = useState('');
+  const [addUrgent, setAddUrgent] = useState(false);
   
   // Form state for editing orders
   const [editDate, setEditDate] = useState('');
@@ -26,6 +30,7 @@ export default function Orders() {
   const [editBrand, setEditBrand] = useState('');
   const [editQty, setEditQty] = useState('');
   const [editStatus, setEditStatus] = useState('');
+  const [editUrgent, setEditUrgent] = useState(false);
   
   // Initialize orders data on component mount
   useEffect(() => {
@@ -37,6 +42,7 @@ export default function Orders() {
         const r = await fetch('/api/session');
         if (r.ok) {
           const j = await r.json();
+          setSessionData(j || null); // store the full response JSON
           const s = j.session;
           if (s && s.pharmacyCode) pharmacyCode = s.pharmacyCode;
         }
@@ -63,7 +69,7 @@ export default function Orders() {
       const initialOrders = [
         { date: '2025-09-02', item: 'Sodium chloride eye drops 5% 10ml', brand: 'Alissa Healthcare brand', qty: 10, status: 'Pending' },
         { date: '2025-09-02', item: 'Erythromycin tablets e/c 250mg 28', brand: 'Bristol brand', qty: 5, status: 'Received' },
-        { date: '2025-09-02', item: 'Exemestane tablets 25mg 30', brand: '', qty: 20, status: 'Shipped' },
+        { date: '2025-09-02', item: 'Exemestane tablets 25mg 30', brand: '', qty: 20, status: 'Unavailable' },
       ];
       setOrders(initialOrders);
       setFilteredOrders(initialOrders);
@@ -94,9 +100,9 @@ export default function Orders() {
     setFilterInput(e.target.value);
   };
   
-  const handleAddOrder = (e) => {
+  const handleAddOrder = async (e) => {
     e.preventDefault();
-    
+
     const newOrder = {
       date: addDate,
       item: addItem,
@@ -104,14 +110,40 @@ export default function Orders() {
       qty: parseInt(addQty, 10),
       status: 'Received', // Default status
     };
-    
-    setOrders([...orders, newOrder]);
-    
+
+    const orderToAppend = {
+      ...newOrder,
+      pharmacyName: sessionData?.session?.pharmacyName || '',
+      urgent: addUrgent
+    };
+
+    try {
+      const res = await appendOrder(orderToAppend);
+      if (res && res.success) {
+        orderToAppend.status = 'Ordered';
+      } else {
+        // Append failed; show error modal and keep status as Pending
+        const msg = (res && res.message) ? res.message : 'Unknown error appending order';
+        setErrorModalMessage(msg);
+        setShowErrorModal(true);
+        orderToAppend.status = 'Pending';
+      }
+    } catch (err) {
+      console.error('appendOrder failed', err);
+      setErrorModalMessage(err.message || 'Error saving order');
+      setShowErrorModal(true);
+      orderToAppend.status = 'Pending';
+    }
+
+    // Update local state (either Ordered or Pending)
+    setOrders(prev => [...prev, { ...orderToAppend }]);
+
     // Reset form
     setAddDate('');
     setAddItem('');
     setAddBrand('');
     setAddQty('');
+    setAddUrgent(false);
   };
   
   const handleEditClick = (order, index) => {
@@ -158,6 +190,16 @@ export default function Orders() {
           <option key={index} value={item.item} />
         ))}
       </datalist>
+
+      {/* Error Modal */}
+      <Modal
+        id="errorModal"
+        title="Error"
+        body={<div className="text-center"><p>{errorModalMessage}</p></div>}
+        show={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        useReactState={true}
+      />
       
       {/* Edit Order Modal */}
       <Modal
@@ -205,6 +247,10 @@ export default function Orders() {
                 value={editQty}
                 onChange={(e) => setEditQty(e.target.value)}
               />
+            </div>
+            <div className="form-check mb-3">
+              <input className="form-check-input" type="checkbox" value="" id="editUrgent" checked={editUrgent} onChange={e => setEditUrgent(e.target.checked)} />
+              <label className="form-check-label" htmlFor="editUrgent">Urgent?</label>
             </div>
             <div className="mb-3">
               <label htmlFor="editStatus" className="form-label">Status</label>
@@ -287,7 +333,11 @@ export default function Orders() {
                     onChange={(e) => setAddQty(e.target.value)}
                 />
                 </div>
-                <div className="col-12 col-md-2">
+                <div className="col-12 col-md-2 d-flex align-items-center">
+                <div className="form-check me-2">
+                  <input className="form-check-input" type="checkbox" value="" id="addUrgent" checked={addUrgent} onChange={e => setAddUrgent(e.target.checked)} />
+                  <label className="form-check-label" htmlFor="addUrgent">Urgent?</label>
+                </div>
                 <button type="submit" className="btn btn-success w-100">
                     Add Order
                 </button>
@@ -326,9 +376,9 @@ export default function Orders() {
                   <td className="text-center">{order.qty}</td>
                   <td className="text-center">
                     <span className={`badge ${
-                      order.status === 'Ordered' ? 'bg-success' :
-                      order.status === 'Pending' ? 'bg-info' :
-                      (order.status === 'Cancelled' || order.status === 'Unavailable') ? 'bg-danger' :
+                      ['Ordered','Received'].includes(order.status) ? 'bg-success' :
+                      ['Hold','Pending','Re-Check','To Be Ordered'].includes(order.status) ? 'bg-warning' :
+                      ['Cancelled','Unavailable','Discrepancy'].includes(order.status) ? 'bg-danger' :
                       'bg-warning text-dark'
                     }`}>
                       {order.status}

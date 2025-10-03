@@ -1,6 +1,6 @@
 import { getSheetData } from '../../utils/googleSheets';
 
-const SPREADSHEET_ID = '1R97ONLxo1h6fV_v3LgdArf0HHa_FcnxSwtbzdMc1prE';
+const SPREADSHEET_ID = process.env.ACCOUNTS_GOOGLE_SPREADSHEET_ID;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
     let matched = null;
     for (const row of data) {
-      if (!row || row.length < 5) continue;
+      if (!row || row.length < 6) continue;
       const rowUsername = row[3] !== undefined ? row[3].toString() : '';
       const rowPassword = row[4] !== undefined ? row[4].toString() : '';
       if (rowUsername === username && rowPassword === password) {
@@ -31,7 +31,8 @@ export default async function handler(req, res) {
       pharmacyCode: matched[1] || '',
       pharmacyName: matched[2] || '',
       username: matched[3] || '',
-      spreadsheetId: matched[5] || SPREADSHEET_ID
+      spreadsheetId: matched[5] || SPREADSHEET_ID,
+      colLetter: matched[6]
     };
 
     const cookieValue = encodeURIComponent(JSON.stringify(session));

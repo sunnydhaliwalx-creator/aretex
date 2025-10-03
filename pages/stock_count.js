@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import { useState, useEffect, useRef } from 'react';
 import Modal from '../components/Modal';
-// import { sheetsAPI } from '../utils/sheetsAPI'; // Uncomment when ready to use
+import { sheetsAPI } from '../utils/sheetsAPI';
 
 export default function StockCount() {
   // State management
@@ -12,26 +12,90 @@ export default function StockCount() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [showSavingModal, setShowSavingModal] = useState(false);
   
   // Ref to track if component is mounted
   const isMounted = useRef(true);
   const autoSaveTimerRef = useRef(null);
+
+  const stockWorksheetName = "Stock";
   
   // Initialize inventory items on component mount
   useEffect(() => {
-    const initialItems = [
-      { id: 1, itemName: 'Aspirin 100mg', inStock: 250, originalStock: 250 },
-      { id: 2, itemName: 'Ibuprofen 200mg', inStock: 180, originalStock: 180 },
-      { id: 3, itemName: 'Acetaminophen 500mg', inStock: 320, originalStock: 320 },
-      { id: 4, itemName: 'Amoxicillin 500mg', inStock: 150, originalStock: 150 },
-      { id: 5, itemName: 'Lisinopril 10mg', inStock: 200, originalStock: 200 },
-      { id: 6, itemName: 'Metformin 500mg', inStock: 275, originalStock: 275 },
-      { id: 7, itemName: 'Atorvastatin 20mg', inStock: 190, originalStock: 190 },
-      { id: 8, itemName: 'Omeprazole 20mg', inStock: 160, originalStock: 160 },
-      { id: 9, itemName: 'Levothyroxine 50mcg', inStock: 210, originalStock: 210 },
-      { id: 10, itemName: 'Amlodipine 5mg', inStock: 140, originalStock: 140 },
-    ];
-    setInventoryItems(initialItems);
+    const loadFromSheet = async () => {
+      // Default fallback items
+      const fallback = [
+        //{ sheetRowId: 1, itemName: 'Aspirin 100mg', inStock: 250, colLetter: 'B' },
+      ];
+
+      try {
+        // Get session from server cookie
+        const sessRes = await fetch('/api/session');
+        if (!sessRes.ok) {
+          setInventoryItems(fallback);
+          return;
+        }
+        const sessJson = await sessRes.json();
+        const session = sessJson.session;
+        if (!session || !session.pharmacyName || !session.spreadsheetId) {
+          setInventoryItems(fallback);
+          return;
+        }
+
+        console.log('Loaded session:', session);
+        const pharmacyName = session.pharmacyName;
+        const spreadsheetId = session.spreadsheetId;
+        const stockCountColumnLetter = session.colLetter;
+
+        // Read the Stock worksheet
+        const data = await sheetsAPI.readSheet(spreadsheetId, stockWorksheetName);
+        console.log(pharmacyName, spreadsheetId, 'Stock Sheet Data:', data);
+        if (!Array.isArray(data) || data.length < 3) {
+          setInventoryItems(fallback);
+          return;
+        }
+
+        if (stockCountColumnLetter === "") {
+          // Not found, fallback
+          setInventoryItems(fallback);
+          return;
+        }
+
+        // convert letter to 0-based index (A=0, B=1, C=2, ...)
+        const getColumnIndexFromLetter = (columnLetter) => {
+            let index = 0;
+            columnLetter = columnLetter.toUpperCase();
+
+            for (let i = 0; i < columnLetter.length; i++) {
+                const charValue = columnLetter.charCodeAt(i) - 64;
+                index = index * 26 + charValue;
+            }
+            return index;
+        }
+        const stockCountColIndex = getColumnIndexFromLetter(stockCountColumnLetter) - 1;
+        console.log({stockCountColumnLetter, stockCountColIndex})
+
+        // Rows start at index 0; there are 2 header rows, so data rows start at index 2
+        const results = [];
+        for (let r = 2; r < data.length; r++) {
+          const row = data[r] || [];
+          const col3 = (row[2] || '').toString();
+          if (col3 === 'Tender') {
+            const itemName = row[1] || '';
+            const rawInStock = row[stockCountColIndex];
+            const inStock = rawInStock === undefined || rawInStock === '' ? '' : Number(rawInStock) || 0;
+            results.push({ sheetRowId: r + 1, itemName, colLetter: stockCountColumnLetter, inStock, originalStock: inStock });
+          }
+        }
+
+        setInventoryItems(results);
+      } catch (err) {
+        console.error('Error loading stock sheet:', err);
+        setInventoryItems([{ sheetRowId: 0, itemName: 'Error loading', inStock: '', originalStock: '', colLetter: 'B' }]);
+      }
+    };
+
+    loadFromSheet();
     
     return () => {
       isMounted.current = false;
@@ -41,7 +105,7 @@ export default function StockCount() {
     };
   }, []);
   
-  // Auto-save functionality - save 30 seconds after last change
+  // Auto-save functionality - save 60 seconds after last change
   useEffect(() => {
     if (hasUnsavedChanges) {
       // Clear existing timer
@@ -54,7 +118,7 @@ export default function StockCount() {
         if (isMounted.current && hasUnsavedChanges) {
           handleSave(true); // true indicates auto-save
         }
-      }, 30000); // 30 seconds
+      }, 60000); // 60 seconds
     }
     
     return () => {
@@ -64,47 +128,98 @@ export default function StockCount() {
     };
   }, [hasUnsavedChanges, inventoryItems]);
   
-  const handleStockChange = (itemId, newValue) => {
-    const updatedItems = inventoryItems.map(item => {
-      if (item.id === itemId) {
-        return { ...item, inStock: newValue === '' ? '' : parseInt(newValue, 10) || 0 };
-      }
-      return item;
-    });
-    
-    setInventoryItems(updatedItems);
-    setHasUnsavedChanges(true);
+  const handleStockChange = (arrayIdx, sheetRowId, newValue) => {
+    // Prefer updating by index (O(1)) when a valid index is provided.
+    if (typeof arrayIdx === 'number' && arrayIdx >= 0 && arrayIdx < inventoryItems.length) {
+      const updated = [...inventoryItems];
+      updated[arrayIdx] = {
+        ...updated[arrayIdx],
+        inStock: newValue === '' ? '' : parseInt(newValue, 10) || 0,
+      };
+      setInventoryItems(updated);
+      setHasUnsavedChanges(true);
+      return;
+    }
+
   };
   
   const handleSave = async (isAutoSave = false) => {
     setIsSaving(true);
     setSaveMessage(isAutoSave ? 'Auto-saving...' : 'Saving...');
-    
+    setShowSavingModal(true);
+
     try {
-      // Prepare data for sheets API
-      const changedItems = inventoryItems.filter(item => 
-        item.inStock !== item.originalStock
-      );
-      
-      console.log('Items to save:', changedItems);
-      
-      // TODO: Uncomment when ready to use
-      // await sheetsAPI.updateRange(spreadsheetId, worksheetName, updates);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
+      // Get current session to obtain spreadsheetId
+      const sessRes = await fetch('/api/session');
+      if (!sessRes.ok) throw new Error('Unable to get session for saving');
+      const sessJson = await sessRes.json();
+      const session = sessJson.session;
+      if (!session || !session.spreadsheetId) throw new Error('No spreadsheetId in session');
+      const spreadsheetId = session.spreadsheetId;
+
+      // Determine which items changed compared to originalStock
+      const changedItems = inventoryItems.filter(item => item.originalStock !== item.inStock);
+      console.log('Changed items to save:', changedItems);
+
+      if (changedItems.length > 0) {
+        // If all changed items share the same column letter, perform a single-column bulk update
+        const firstCol = changedItems[0].colLetter;
+        const allSameCol = changedItems.every(i => i.colLetter === firstCol);
+
+        if (allSameCol) {
+          // Build contiguous range from minRow to maxRow in that column
+          const rows = changedItems.map(i => i.sheetRowId);
+          const minRow = Math.min(...rows);
+          const maxRow = Math.max(...rows);
+
+          // Create a map for quick lookup
+          const rowMap = {};
+          for (const it of changedItems) {
+            rowMap[it.sheetRowId] = it.inStock === '' ? '' : it.inStock;
+          }
+
+          // Build values as a 2D array (single column) covering the full range
+          const values = [];
+          for (let r = minRow; r <= maxRow; r++) {
+            const val = rowMap[r] !== undefined ? rowMap[r] : '';
+            values.push([val]);
+          }
+
+          const range = `${firstCol}${minRow}:${firstCol}${maxRow}`;
+          console.log({range,values})
+          await sheetsAPI.updateRange(spreadsheetId, stockWorksheetName, range, values);
+        } else {
+          // Mixed columns - fallback to updateCells (batch individual cell updates)
+          const columnLetterToNumber = (letters) => {
+            let num = 0;
+            letters = (letters || '').toUpperCase();
+            for (let i = 0; i < letters.length; i++) {
+              num = num * 26 + (letters.charCodeAt(i) - 64);
+            }
+            return num;
+          };
+
+          const updates = changedItems.map(it => ({
+            spreadsheetRow: it.sheetRowId,
+            spreadsheetCol: columnLetterToNumber(it.colLetter),
+            spreadsheetValue: it.inStock === '' ? '' : it.inStock
+          }));
+
+          await sheetsAPI.updateCells(spreadsheetId, stockWorksheetName, updates);
+        }
+      }
+
       // Update originalStock values after successful save
       const updatedItems = inventoryItems.map(item => ({
         ...item,
         originalStock: item.inStock
       }));
       setInventoryItems(updatedItems);
-      
+
       setLastSavedTime(new Date());
       setHasUnsavedChanges(false);
       setSaveMessage(isAutoSave ? 'Auto-saved successfully!' : 'Saved successfully!');
-      
+
       if (!isAutoSave) {
         setShowSuccessModal(true);
         setTimeout(() => setShowSuccessModal(false), 2000);
@@ -114,6 +229,7 @@ export default function StockCount() {
       setSaveMessage('Error saving. Please try again.');
     } finally {
       setIsSaving(false);
+      setShowSavingModal(false);
     }
   };
   
@@ -151,12 +267,32 @@ export default function StockCount() {
         onClose={() => setShowSuccessModal(false)}
         useReactState={true}
       />
+
+      {/* Saving Modal (shows while saving) */}
+      <Modal
+        id="savingModal"
+        title="Saving..."
+        body={
+          <div className="text-center">
+            <div className="spinner-border text-primary" role="status" style={{ width: '3rem', height: '3rem' }}>
+              <span className="visually-hidden">Saving...</span>
+            </div>
+            <p className="mt-3 mb-0">{saveMessage}</p>
+          </div>
+        }
+        show={showSavingModal}
+        onClose={() => setShowSavingModal(false)}
+        useReactState={true}
+      />
       
       <div className="container-fluid mt-4">
         <div className="row mb-1">
           <div className="col">
             <h2 className="mb-0">Inventory Stock Count</h2>
             <small className="text-light">
+              If you spot any discrepancies with the usages displayed, please get in touch and we can update them.
+            </small>
+            {/*<small className="text-light">
               Last saved: {formatLastSavedTime()}
               {hasUnsavedChanges && (
                 <span className="badge bg-warning text-dark ms-2">
@@ -164,7 +300,7 @@ export default function StockCount() {
                   Unsaved changes
                 </span>
               )}
-            </small>
+            </small>*/}
           </div>
         </div>
 
@@ -194,21 +330,27 @@ export default function StockCount() {
         {/* Inventory Items Grid */}
         <div className="row">
           {inventoryItems.length > 0 ? (
-            inventoryItems.map((item) => (
-              <div key={item.id} className="col-12 col-sm-6 col-md-4 col-lg-12 mb-2">
+            inventoryItems.map((item,arrayIdx) => (
+              <div key={item.sheetRowId} className="col-12 col-sm-6 col-md-4 col-lg-12 mb-2">
                 <div className="card h-100">
                   <div className="card-body p-3">
                     <h6 className="card-title mb-1">{item.itemName}</h6>
                     <div className="mb-0">
-                      {/*<label className="form-label small text-muted my-0">In Stock</label>*/}
+                      <div className="small text-muted">Current Usage: 10</div>
                       <input 
                         type="number" 
                         className="form-control form-control-lg text-center"
                         min="0"
                         value={item.inStock}
-                        onChange={(e) => handleStockChange(item.id, e.target.value)}
+                        onChange={(e) => handleStockChange(arrayIdx, item.sheetRowId, e.target.value)}
                         style={{ fontSize: '1.5rem', fontWeight: 'bold' }}
                       />
+                    </div>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="myCheckbox" value="Y"/>
+                      <label class="form-check-label" for="myCheckbox">
+                        Reorder?
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -218,7 +360,7 @@ export default function StockCount() {
             <div className="col-12">
               <div className="alert alert-info text-center">
                 <i className="bi bi-info-circle me-2"></i>
-                No items found matching your filter
+                No items found for your pharmacy
               </div>
             </div>
           )}
@@ -230,7 +372,7 @@ export default function StockCount() {
             <div className="alert alert-light">
               <i className="bi bi-info-circle me-2"></i>
               <small>
-                <strong>Auto-save:</strong> Your changes will be automatically saved 30 seconds after you stop editing. 
+                <strong>Auto-save:</strong> Your changes will be automatically saved 60 seconds after you stop editing. 
                 You can also click "Save All Changes" to save immediately.
               </small>
             </div>
