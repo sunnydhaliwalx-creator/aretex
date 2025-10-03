@@ -409,7 +409,6 @@ export default function Orders() {
                     type="text" 
                     className="form-control" 
                     placeholder="Brand" 
-                    required
                     value={addBrand}
                     onChange={(e) => setAddBrand(e.target.value)}
                 />
