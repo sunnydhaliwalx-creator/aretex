@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchFilteredOrders, fetchMasterInventoryItemsOptions, appendOrder, updateOrder } from '../utils/sheetsAPI';
+import { fetchFilteredOrders, fetchMasterInventoryItemsOptions, appendOrder, updateOrder, formatDateForSheets } from '../utils/sheetsAPI';
 
 export default function Orders() {
   // State management
@@ -234,22 +234,30 @@ export default function Orders() {
 
     const defaultStatus = '';
 
+    // generate current datetime here so the UI shows it immediately
+    const now = new Date();
+
     const newOrder = {
       item: addItem,
       brand: addBrand,
       qty: parseInt(addQty, 10),
       status: defaultStatus, // Default status
+      date: now
     };
 
     const orderToAppend = {
       ...newOrder,
-      pharmacyCode: sessionData?.session?.pharmacyCode || '',
+      pharmacyCode: sessionData?.session?.pharmacyCode,
       urgent: addUrgent
     };
+    console.log('orderToAppend', orderToAppend);
+    console.log('sessionData', sessionData);
 
     try {
       const res = await appendOrder(orderToAppend);
       if (res && res.success) {
+        // capture sheet row returned by appendOrder
+        orderToAppend.spreadsheetRow = res.row || undefined;
         orderToAppend.status = defaultStatus;
       } else {
         // Append failed; show error modal and keep status as Pending
@@ -265,8 +273,8 @@ export default function Orders() {
       orderToAppend.status = defaultStatus;
     }
 
-    // Update local state (either Ordered or Pending)
-    setOrders(prev => [...prev, { ...orderToAppend }]);
+  // Update local state (either Ordered or Pending) - prepend so newest appears at top
+  setOrders(prev => [{ ...orderToAppend }, ...prev]);
 
     // Reset form
     setAddItem('');
@@ -465,14 +473,14 @@ export default function Orders() {
             <tbody>
               {filteredOrders.map((order, index) => (
                 <tr key={index}>
-                  <td className="text-center small">{order.date}</td>
+                  <td className="text-center small">{order.date ? formatDateForSheets(order.date) : ''}</td>
                   <td>{order.item}{order.brand ? ` (${order.brand})` : ''}</td>
                   <td className="text-center">{order.qty}</td>
                   <td className="text-center small px-0">
                     {order.urgent ? (
                       '✔'
                     ) : (
-                      order.status === 'Ordered' ? (
+                      (order.status === 'Ordered' || order.status === '') ? (
                         <button
                           className="btn btn-sm btn-outline-primary small py-0 px-1"
                           onClick={() => handleMarkUrgent(order, index)}
