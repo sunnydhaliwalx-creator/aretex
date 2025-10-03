@@ -1,6 +1,8 @@
 // a login page in nextjs using bootstrap 5
 import { useState } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
+import Image from 'next/image';
 // client delegates auth to server-side /api/login
 
 export default function Login() {
@@ -48,7 +50,18 @@ export default function Login() {
         }
     };
     return (
+        <>
+        <Head>
+            <meta name="theme-color" content="#0d6efd" />
+        </Head>
         <div className="container mt-5">
+            {/* Logo above centered card */}
+            <div className="row justify-content-center mb-3">
+                <div className="col-auto d-flex justify-content-center align-items-center">
+                    {/* Use next/image for optimization; fallback to plain img if needed */}
+                    <Image src="/logo.png" alt="Aretex" width={200} height={113} priority />
+                </div>
+            </div>
             <div className="row justify-content-center">
                 <div className="col-md-6">
                     <div className="card">
@@ -74,5 +87,6 @@ export default function Login() {
                 </div>
             </div>
         </div>
+        </>
     );
 }

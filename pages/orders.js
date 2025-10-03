@@ -179,20 +179,25 @@ export default function Orders() {
   
   // Filter orders when filter input or orders change
   useEffect(() => {
-    if (!filterInput.trim()) {
+    // If no query, show all orders
+    if (!filterInput || !filterInput.trim()) {
       setFilteredOrders(orders);
       return;
     }
-    
-    const filter = filterInput.toLowerCase();
-    const filtered = orders.filter(order =>
-      order.date.toLowerCase().includes(filter) ||
-      order.item.toLowerCase().includes(filter) ||
-      order.brand.toLowerCase().includes(filter) ||
-      order.qty.toString().includes(filter) ||
-      order.status.toLowerCase().includes(filter)
-    );
-    setFilteredOrders(filtered);
+
+    // Use fuzzy scoring (scoreItem) against a combined order string
+    const q = filterInput.trim();
+    const scored = orders.map((order, i) => {
+      const target = `${order.item || ''} ${order.brand || ''} ${order.status || ''} ${order.date || ''} ${order.qty || ''}`;
+      return { order, score: scoreItem(q, target), index: i };
+    });
+
+    const top = scored
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(s => s.order);
+
+    setFilteredOrders(top);
   }, [filterInput, orders]);
   
   // Event handlers
@@ -201,8 +206,9 @@ export default function Orders() {
   };
 
   // allowed for orders marked Ordered and changes status to Received or Discrepancy
-  const markReceivedOrDiscrepancy = async (order, index, status) => {
+  const markReceived = async (order, index) => {
     try {
+      const status = "Received";
       const orderToUpdate = { ...orders[index], status: status };
       const res = await updateOrder(orderToUpdate);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
@@ -211,7 +217,7 @@ export default function Orders() {
       updatedOrders[index] = { ...updatedOrders[index], status: status };
       setOrders(updatedOrders);
     } catch (err) {
-      console.error('markReceivedOrDiscrepancy error', err);
+      console.error('markReceived error', err);
       setErrorModalMessage(err.message || 'Failed to mark received');
       setShowErrorModal(true);
     }
@@ -270,10 +276,56 @@ export default function Orders() {
   };
   
   // Edit modal handlers removed; using Mark Urgent and Discrepancy flows instead
+
+  const handleMarkUrgent = async (order, index) => {
+    try {
+      const orderToUpdate = { ...order, urgent: true };
+      const res = await updateOrder(orderToUpdate);
+      if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
+      const updated = [...orders];
+      updated[index] = { ...updated[index], urgent: true };
+      setOrders(updated);
+    } catch (err) {
+      console.error('mark urgent error', err);
+      setErrorModalMessage(err.message || 'Failed to mark urgent');
+      setShowErrorModal(true);
+    }
+  };
+
+  const handleMarkReceived = (order, index) => {
+    return markReceived(order, index);
+  };
+
+  const handleMarkDiscrepancy = (index) => {
+    setCurrentEditIndex(index);
+    setShowDiscrepancyModal(true);
+  };
+
+  const handleSaveDiscrepancy = async () => {
+    if (currentEditIndex === null) return setShowDiscrepancyModal(false);
+    try {
+      const targetOrder = orders[currentEditIndex] || {};
+      const orderToUpdate = { ...targetOrder, status: 'Discrepancy', comments: discrepancyNotes };
+      const res = await updateOrder(orderToUpdate);
+      if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
+      const updated = [...orders];
+      updated[currentEditIndex] = { ...updated[currentEditIndex], status: 'Discrepancy' };
+      setOrders(updated);
+    } catch (err) {
+      console.error('discrepancy save error', err);
+      setErrorModalMessage(err.message || 'Failed to save discrepancy');
+      setShowErrorModal(true);
+    } finally {
+      setShowDiscrepancyModal(false);
+      setDiscrepancyNotes('');
+      setCurrentEditIndex(null);
+    }
+  };
   
   return (
     <>
       <Head>
+        <link rel="icon" href="/favicon.ico" sizes="any" />
         <title>Aretex - Orders</title>
       </Head>
       
@@ -305,27 +357,7 @@ export default function Orders() {
         footer={
           <>
             <button type="button" className="btn btn-secondary" onClick={() => { setShowDiscrepancyModal(false); setDiscrepancyNotes(''); }}>Cancel</button>
-            <button type="button" className="btn btn-danger" onClick={async () => {
-              // currentEditIndex should be set to the row we want to mark discrepancy on
-              if (currentEditIndex === null) return setShowDiscrepancyModal(false);
-              try {
-                const targetOrder = orders[currentEditIndex] || {};
-                const orderToUpdate = { ...targetOrder, status: 'Discrepancy', comments: discrepancyNotes };
-                const res = await updateOrder(orderToUpdate);
-                if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
-                const updated = [...orders];
-                updated[currentEditIndex] = { ...updated[currentEditIndex], status: 'Discrepancy' };
-                setOrders(updated);
-              } catch (err) {
-                console.error('discrepancy save error', err);
-                setErrorModalMessage(err.message || 'Failed to save discrepancy');
-                setShowErrorModal(true);
-              } finally {
-                setShowDiscrepancyModal(false);
-                setDiscrepancyNotes('');
-                setCurrentEditIndex(null);
-              }
-            }}>Save Notes</button>
+            <button type="button" className="btn btn-danger" onClick={() => handleSaveDiscrepancy()}>Save Notes</button>
           </>
         }
         show={showDiscrepancyModal}
@@ -354,7 +386,7 @@ export default function Orders() {
                 />
 
                 {!isValidAddItem() && addItem && (
-                  <div className="form-text text-danger">Item must match one of the master items.</div>
+                  <div className="form-text text-danger">Item must match one dropdown items.</div>
                 )}
 
                 {showSuggestions && suggestions.length > 0 && (
@@ -422,7 +454,7 @@ export default function Orders() {
         <div className="table-responsive">
           <table className="table table-light table-striped table-bordered table-hover">
             <thead className="table-light">
-              <tr className="text-center">
+              <tr className="text-center small">
                 <th>Date</th>
                 <th>Item</th>
                 <th>Qty</th>
@@ -434,55 +466,49 @@ export default function Orders() {
             <tbody>
               {filteredOrders.map((order, index) => (
                 <tr key={index}>
-                  <td className="text-center">{order.date}</td>
+                  <td className="text-center small">{order.date}</td>
                   <td>{order.item}{order.brand ? ` (${order.brand})` : ''}</td>
                   <td className="text-center">{order.qty}</td>
-                  <td className="text-center">{order.urgent ? '✔' : ''}</td>
+                  <td className="text-center small px-0">
+                    {order.urgent ? (
+                      '✔'
+                    ) : (
+                      order.status === 'Ordered' ? (
+                        <button
+                          className="btn btn-sm btn-outline-primary small py-0 px-1"
+                          onClick={() => handleMarkUrgent(order, index)}
+                        >
+                          Mark Urgent
+                        </button>
+                      ) : (
+                        ''
+                      )
+                    )}
+                  </td>
                   <td className="text-center">
                     <span className={`badge ${
                       ['Ordered','Received'].includes(order.status) ? 'text-success' :
                       ['Hold','Pending','Re-Check','To Be Ordered'].includes(order.status) ? 'text-warning' :
                       ['Cancelled','Unavailable','Discrepancy'].includes(order.status) ? 'text-danger' :
-                      'bg-warning text-dark'
+                      'text-dark'
                     }`}>
                       {order.status}
                     </span>
                   </td>
                   <td>
-                    {/* Mark Urgent replaces Edit. Only show when Ordered and not urgent */}
-                    {order.status === 'Ordered' && !order.urgent && (
-                      <button
-                        className="btn btn-sm btn-outline-primary small py-0 px-2 me-1"
-                        onClick={async () => {
-                          try {
-                            const orderToUpdate = { ...order, urgent: true };
-                            const res = await updateOrder(orderToUpdate);
-                            if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
-                            const updated = [...orders];
-                            updated[index] = { ...updated[index], urgent: true };
-                            setOrders(updated);
-                          } catch (err) {
-                            console.error('mark urgent error', err);
-                            setErrorModalMessage(err.message || 'Failed to mark urgent');
-                            setShowErrorModal(true);
-                          }
-                        }}
-                      >
-                        Mark Urgent
-                      </button>
-                    )}
+                    {/* Mark Urgent moved to the Urgent column */}
 
                     {order.status === 'Ordered' && (
                       <>
                         <button
                           className="btn btn-sm btn-outline-success small py-0 px-2 me-1"
-                          onClick={() => markReceivedOrDiscrepancy(order, index, 'Received')}
+                          onClick={() => handleMarkReceived(order, index)}
                         >
                           Mark Received
                         </button>
                         <button
                           className="btn btn-sm btn-outline-danger small py-0 px-2"
-                          onClick={() => { setCurrentEditIndex(index); setShowDiscrepancyModal(true); }}
+                          onClick={() => handleMarkDiscrepancy(index)}
                         >
                           Mark Discrepancy
                         </button>

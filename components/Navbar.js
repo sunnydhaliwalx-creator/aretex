@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 
@@ -90,8 +91,9 @@ export default function Navbar() {
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
       <div className="container-fluid">
         <Link href="/" className="navbar-brand d-flex align-items-center">
-          <span className="placeholder-wave me-2" style={{width:40, height:40, display:'inline-block', background:'#ddd', borderRadius:6}}></span>
-          <span className="ms-1">Aretex</span>
+          {/*<span className="placeholder-wave me-2" style={{width:40, height:40, display:'inline-block', background:'#ddd', borderRadius:6}}></span>
+          <span className="ms-1">Aretex</span>*/}
+          <Image src="/logo_white.png" alt="Aretex" width={100} height={56} priority />
           {pharmacyName ? <small className="ms-3 small text-light"><small className="text-info"> {">"} </small>{pharmacyName}</small> : null}
         </Link>
         <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
