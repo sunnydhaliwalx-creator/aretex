@@ -25,7 +25,7 @@ export default function StockCount() {
     const loadFromSheet = async () => {
       // Default fallback items
       const fallback = [
-        //{ sheetRowId: 1, itemName: 'Aspirin 100mg', inStock: 250, colLetter: 'B' },
+        //{ sheetRowId: 1, itemName: 'Aspirin 100mg', inStock: 250, stockCountColLetter: 'B' },
       ];
 
       try {
@@ -45,7 +45,7 @@ export default function StockCount() {
         console.log('Loaded session:', session);
         const pharmacyName = session.pharmacyName;
         const spreadsheetId = session.spreadsheetId;
-        const stockCountColumnLetter = session.colLetter;
+        const stockCountColumnLetter = session.stockCountColLetter;
 
         // Read the Stock worksheet
         const data = await sheetsAPI.readSheet(spreadsheetId, stockWorksheetName);
@@ -292,7 +292,7 @@ export default function StockCount() {
             <small className="text-light">
               If you spot any discrepancies with the usages displayed, please get in touch and we can update them.
             </small>
-            {/*<small className="text-light">
+            <small className="text-light">
               Last saved: {formatLastSavedTime()}
               {hasUnsavedChanges && (
                 <span className="badge bg-warning text-dark ms-2">
@@ -300,7 +300,7 @@ export default function StockCount() {
                   Unsaved changes
                 </span>
               )}
-            </small>*/}
+            </small>
           </div>
         </div>
 
@@ -362,7 +362,7 @@ export default function StockCount() {
                                 setHasUnsavedChanges(true);
                               }
                             }}
-                            style={{ 'font-size': '1.4rem', '--bs-form-switch-width': '4em', '--bs-form-switch-height': '2em' }}
+                            style={{ 'fontSize': '1.4rem', '--bs-form-switch-width': '4em', '--bs-form-switch-height': '2em' }}
                           />
                           <label className="form-check-label ms-2" htmlFor={`reorderSwitch_${item.sheetRowId}`}>{item.reorder ? 'Yes' : 'No'}</label>
                         </div>

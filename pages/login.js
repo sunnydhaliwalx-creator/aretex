@@ -1,7 +1,7 @@
 // a login page in nextjs using bootstrap 5
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { sheetsAPI } from '../utils/sheetsAPI';
+// client delegates auth to server-side /api/login
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -17,46 +17,7 @@ export default function Login() {
         setError('');
         setSuccess(false);
         try {
-            const spreadsheetId = '1R97ONLxo1h6fV_v3LgdArf0HHa_FcnxSwtbzdMc1prE';
-            const data = await sheetsAPI.readSheet(spreadsheetId, 'web_creds');
-
-            if (!Array.isArray(data) || data.length === 0) {
-                setError('Invalid Login');
-                setLoading(false);
-                return;
-            }
-
-            let matched = null;
-            for (const row of data) {
-                if (!row || row.length < 5) continue;
-                const rowUsername = row[3] !== undefined ? row[3].toString() : '';
-                const rowPassword = row[4] !== undefined ? row[4].toString() : '';
-
-                // Case-sensitive comparison as requested
-                if (rowUsername === username && rowPassword === password) {
-                    matched = row;
-                    break;
-                }
-            }
-
-            if (!matched) {
-                setError('Invalid Login');
-                setLoading(false);
-                return;
-            }
-
-            // Build session object from columns 1-6 (0-based indexes 0-5)
-            const session = {
-                file: matched[0] || '',
-                pharmacyCode: matched[1].replace('TEST ','') || '',
-                pharmacyName: matched[2] || '',
-                username: matched[3] || '',
-                password: matched[4] || '',
-                spreadsheetId: matched[5] || ''
-            };
-            console.log('Session:', session);
-
-            // Call server login endpoint which sets an HttpOnly cookie
+            // Delegate authentication to server-side handler which sets the HttpOnly cookie
             const resp = await fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -64,9 +25,14 @@ export default function Login() {
             });
 
             if (!resp.ok) {
-                setError('Invalid Login');
+                const json = await resp.json().catch(() => null);
+                const msg = (json && json.message) ? json.message : 'Invalid Login';
+                setError(msg);
                 setLoading(false);
                 return;
+            } else {
+                const json = await resp.json();
+                console.log('Log In Success',json)
             }
 
             // Notify components and redirect

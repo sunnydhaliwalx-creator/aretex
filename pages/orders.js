@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchFilteredOrders, fetchMasterItems, appendOrder, updateOrder } from '../utils/sheetsAPI';
+import { fetchFilteredOrders, fetchMasterInventorItemsOptions, appendOrder, updateOrder } from '../utils/sheetsAPI';
 
 export default function Orders() {
   // State management
@@ -13,6 +13,10 @@ export default function Orders() {
   const [currentEditOrder, setCurrentEditOrder] = useState(null);
   const [currentEditIndex, setCurrentEditIndex] = useState(null);
   const [masterItems, setMasterItems] = useState([]);
+  // Autocomplete suggestions
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
   const [sessionData, setSessionData] = useState(null);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorModalMessage, setErrorModalMessage] = useState('');
@@ -54,7 +58,7 @@ export default function Orders() {
       console.log('pharmacyCode',pharmacyCode,'rows',rows);
       
       // Fetch master items
-      const items = await fetchMasterItems();
+  const items = await fetchMasterInventorItemsOptions();
       setMasterItems(items);
       
       if (Array.isArray(rows) && rows.length > 0) {
@@ -72,6 +76,99 @@ export default function Orders() {
     };
     load();
   }, []);
+
+  // Simple fuzzy scoring: token match + sequential match bonus - length penalty
+  const scoreItem = (query, target) => {
+    if (!query) return 0;
+    const q = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const t = target.toLowerCase();
+
+    let score = 0;
+    // token matches
+    for (const token of q) {
+      if (t.includes(token)) score += 10;
+      // sequential/startsWith bonus
+      if (t.startsWith(token)) score += 5;
+    }
+
+    // proximity: reward continuous occurrence
+    const joined = q.join(' ');
+    if (joined && t.includes(joined)) score += 15;
+
+    // shorter target slightly preferred
+    score -= Math.max(0, (t.length - joined.length) / 50);
+
+    return score;
+  };
+
+  const updateSuggestions = (query) => {
+    if (!query || !masterItems || masterItems.length === 0) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setActiveSuggestion(-1);
+      return;
+    }
+
+    const scored = masterItems.map(mi => ({
+      item: mi.item || '',
+      brand: mi.brand || '',
+      score: scoreItem(query, `${mi.item} ${mi.brand}`)
+    }));
+
+    const top = scored
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    setSuggestions(top);
+    setShowSuggestions(top.length > 0);
+    setActiveSuggestion(-1);
+  };
+
+  const handleAddItemChange = (e) => {
+    const v = e.target.value;
+    setAddItem(v);
+    updateSuggestions(v);
+  };
+
+  // Reuse handlers for edit input by supplying setter functions
+  const handleEditItemChange = (e) => {
+    const v = e.target.value;
+    setEditItem(v);
+    updateSuggestions(v);
+  };
+
+  // Choose suggestion for current focused input (add or edit)
+  const chooseSuggestion = (sugg, target = 'add') => {
+    if (target === 'add') {
+      setAddItem(sugg.item);
+      if (sugg.brand) setAddBrand(sugg.brand);
+    } else if (target === 'edit') {
+      setEditItem(sugg.item);
+      if (sugg.brand) setEditBrand(sugg.brand);
+    }
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setActiveSuggestion(-1);
+  };
+
+  const handleAddItemKeyDown = (e, target = 'add') => {
+    if (!showSuggestions) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveSuggestion(prev => Math.min(prev + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveSuggestion(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      if (activeSuggestion >= 0 && activeSuggestion < suggestions.length) {
+        e.preventDefault();
+        chooseSuggestion(suggestions[activeSuggestion], target);
+      }
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false);
+    }
+  };
   
   // Filter orders when filter input or orders change
   useEffect(() => {
@@ -209,12 +306,7 @@ export default function Orders() {
         <title>Aretex - Orders</title>
       </Head>
       
-      {/* Master Items Datalist */}
-      <datalist id="masterItemsList">
-        {masterItems.map((item, index) => (
-          <option key={index} value={item.item} />
-        ))}
-      </datalist>
+      {/* Inline fuzzy suggestions (no native datalist) */}
 
       {/* Error Modal */}
       <Modal
@@ -232,16 +324,33 @@ export default function Orders() {
         title="Edit Order"
         body={
           <form>
-            <div className="mb-3">
+            <div className="mb-3" style={{ position: 'relative' }}>
               <label htmlFor="editItem" className="form-label">Item</label>
               <input 
                 type="text" 
                 id="editItem" 
                 className="form-control"
-                list="masterItemsList"
                 value={editItem}
-                onChange={(e) => setEditItem(e.target.value)}
+                onChange={handleEditItemChange}
+                onKeyDown={(e) => handleAddItemKeyDown(e, 'edit')}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                onFocus={() => updateSuggestions(editItem)}
               />
+
+              {/* Suggestions dropdown reused for edit input */}
+              {showSuggestions && suggestions.length > 0 && (
+                <ul className="list-group position-absolute" style={{ zIndex: 1000, width: '100%', maxHeight: '240px', overflowY: 'auto' }}>
+                  {suggestions.map((s, i) => (
+                    <li key={i}
+                      className={`list-group-item list-group-item-action ${i === activeSuggestion ? 'active' : ''}`}
+                      onMouseDown={() => chooseSuggestion(s, 'edit')}
+                      onMouseEnter={() => setActiveSuggestion(i)}
+                    >
+                      <div style={{ fontSize: '0.95rem' }}>{s.item}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="mb-3">
               <label htmlFor="editBrand" className="form-label">Brand</label>
@@ -309,17 +418,34 @@ export default function Orders() {
         {/* Add Order Form */}
         <form onSubmit={handleAddOrder} className="mb-4">
             <div className="row g-2 py-2 border rounded bg-light">
-            {/* Date is auto-filled server-side; no date input required */}
             <div className="col-12 col-sm-6 col-md-5">
+                <div style={{ position: 'relative' }}>
                 <input 
                     type="text" 
                     className="form-control" 
                     placeholder="Item" 
-                    list="masterItemsList"
                     required
                     value={addItem}
-                    onChange={(e) => setAddItem(e.target.value)}
+                    onChange={handleAddItemChange}
+                    onKeyDown={handleAddItemKeyDown}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    onFocus={() => updateSuggestions(addItem)}
                 />
+
+                {showSuggestions && suggestions.length > 0 && (
+                  <ul className="list-group position-absolute" style={{ zIndex: 1000, width: '100%', maxHeight: '240px', overflowY: 'auto' }}>
+                    {suggestions.map((s, i) => (
+                      <li key={i}
+                        className={`list-group-item list-group-item-action ${i === activeSuggestion ? 'active' : ''}`}
+                        onMouseDown={() => chooseSuggestion(s, 'add')}
+                        onMouseEnter={() => setActiveSuggestion(i)}
+                      >
+                        <div style={{ fontSize: '0.95rem' }}>{s.item}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                </div>
             </div>
             <div className="col-12 col-sm-6 col-md-3">
                 <input 
