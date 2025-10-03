@@ -81,11 +81,11 @@ export default function StockCount() {
           const row = data[r] || [];
           const col3 = (row[2] || '').toString();
           if (col3 === 'Tender') {
-            const itemName = row[1] || '';
-            const rawInStock = row[stockCountColIndex];
-            const inStock = rawInStock === undefined || rawInStock === '' ? '' : Number(rawInStock) || 0;
-            results.push({ sheetRowId: r + 1, itemName, colLetter: stockCountColumnLetter, inStock, originalStock: inStock });
-          }
+              const itemName = row[1] || '';
+              const rawInStock = row[stockCountColIndex];
+              const inStock = rawInStock === undefined || rawInStock === '' ? '' : Number(rawInStock) || 0;
+              results.push({ sheetRowId: r + 1, itemName, colLetter: stockCountColumnLetter, inStock, originalStock: inStock, reorder: false });
+            }
         }
 
         setInventoryItems(results);
@@ -337,20 +337,46 @@ export default function StockCount() {
                     <h6 className="card-title mb-1">{item.itemName}</h6>
                     <div className="mb-0">
                       <div className="small text-muted">Current Usage: 10</div>
-                      <input 
-                        type="number" 
-                        className="form-control form-control-lg text-center"
+
+                      <div className="d-flex align-items-center mt-2">
+                        <label htmlFor={`reorderSwitch_${item.sheetRowId}`} className="form-label mb-0 me-4">Reorder?</label>
+                        <div className="form-check form-switch d-flex align-items-center">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            role="switch"
+                            id={`reorderSwitch_${item.sheetRowId}`}
+                            checked={!!item.reorder}
+                            onChange={(e) => {
+                              // toggle reorder: if turning on, set input to 0 and disable; if turning off, clear input
+                              const checked = e.target.checked;
+                              const updated = [...inventoryItems];
+                              const idx = arrayIdx;
+                              if (typeof idx === 'number' && idx >= 0 && idx < updated.length) {
+                                updated[idx] = {
+                                  ...updated[idx],
+                                  reorder: checked,
+                                  inStock: checked ? 0 : ''
+                                };
+                                setInventoryItems(updated);
+                                setHasUnsavedChanges(true);
+                              }
+                            }}
+                            style={{ 'font-size': '1.4rem', '--bs-form-switch-width': '4em', '--bs-form-switch-height': '2em' }}
+                          />
+                          <label className="form-check-label ms-2" htmlFor={`reorderSwitch_${item.sheetRowId}`}>{item.reorder ? 'Yes' : 'No'}</label>
+                        </div>
+                      </div>
+
+                      <input
+                        type="number"
+                        className="form-control text-center mt-2"
                         min="0"
                         value={item.inStock}
                         onChange={(e) => handleStockChange(arrayIdx, item.sheetRowId, e.target.value)}
-                        style={{ fontSize: '1.5rem', fontWeight: 'bold' }}
+                        style={{ fontSize: '1.3rem', fontWeight: 'bold' }}
+                        disabled={!!item.reorder}
                       />
-                    </div>
-                    <div class="form-check">
-                      <input class="form-check-input" type="checkbox" id="myCheckbox" value="Y"/>
-                      <label class="form-check-label" for="myCheckbox">
-                        Reorder?
-                      </label>
                     </div>
                   </div>
                 </div>
