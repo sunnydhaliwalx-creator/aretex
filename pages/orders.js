@@ -9,7 +9,7 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [filterInput, setFilterInput] = useState('');
-  const [showEditModal, setShowEditModal] = useState(false);
+  // Edit modal removed; we still keep current index for discrepancy flow
   const [currentEditOrder, setCurrentEditOrder] = useState(null);
   const [currentEditIndex, setCurrentEditIndex] = useState(null);
   const [masterItems, setMasterItems] = useState([]);
@@ -20,6 +20,8 @@ export default function Orders() {
   const [sessionData, setSessionData] = useState(null);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorModalMessage, setErrorModalMessage] = useState('');
+  const [showDiscrepancyModal, setShowDiscrepancyModal] = useState(false);
+  const [discrepancyNotes, setDiscrepancyNotes] = useState('');
   
   // Form state for adding orders
   const [addItem, setAddItem] = useState('');
@@ -27,7 +29,7 @@ export default function Orders() {
   const [addQty, setAddQty] = useState('');
   const [addUrgent, setAddUrgent] = useState(false);
   
-  // Form state for editing orders
+  // Form state for editing orders (modal removed)
   const [editDate, setEditDate] = useState('');
   const [editItem, setEditItem] = useState('');
   const [editBrand, setEditBrand] = useState('');
@@ -63,7 +65,7 @@ export default function Orders() {
       
       if (Array.isArray(rows) && rows.length > 0) {
         // Map to orders shape used in this page; include spreadsheetRow so we can update
-        const mapped = rows.map(r => ({ date: r.date, item: r.inventoryItem, brand: '', qty: r.qty || 0, status: r.status || 'Pending', spreadsheetRow: r.spreadsheetRow }));
+        const mapped = rows.map(r => ({ date: r.date, item: r.inventoryItem, brand: '', qty: r.qty || 0, status: r.status || 'Pending', urgent: !!r.urgent, spreadsheetRow: r.spreadsheetRow }));
         setOrders(mapped);
         setFilteredOrders(mapped);
         return;
@@ -142,10 +144,8 @@ export default function Orders() {
   const chooseSuggestion = (sugg, target = 'add') => {
     if (target === 'add') {
       setAddItem(sugg.item);
-      if (sugg.brand) setAddBrand(sugg.brand);
     } else if (target === 'edit') {
       setEditItem(sugg.item);
-      if (sugg.brand) setEditBrand(sugg.brand);
     }
     setSuggestions([]);
     setShowSuggestions(false);
@@ -168,6 +168,13 @@ export default function Orders() {
     } else if (e.key === 'Escape') {
       setShowSuggestions(false);
     }
+  };
+
+  // Validate that addItem exactly matches a master item (case-insensitive)
+  const isValidAddItem = () => {
+    if (!addItem || !masterItems || masterItems.length === 0) return false;
+    const v = addItem.toString().trim().toLowerCase();
+    return masterItems.some(mi => (mi.item || '').toString().trim().toLowerCase() === v);
   };
   
   // Filter orders when filter input or orders change
@@ -212,12 +219,20 @@ export default function Orders() {
   
   const handleAddOrder = async (e) => {
     e.preventDefault();
+    // Ensure the item is valid
+    if (!isValidAddItem()) {
+      setErrorModalMessage('Please choose a valid item from the master list before adding.');
+      setShowErrorModal(true);
+      return;
+    }
+
+    const defaultStatus = '';
 
     const newOrder = {
       item: addItem,
       brand: addBrand,
       qty: parseInt(addQty, 10),
-      status: 'Ordered', // Default status
+      status: defaultStatus, // Default status
     };
 
     const orderToAppend = {
@@ -229,7 +244,7 @@ export default function Orders() {
     try {
       const res = await appendOrder(orderToAppend);
       if (res && res.success) {
-        orderToAppend.status = 'Ordered';
+        orderToAppend.status = defaultStatus;
       } else {
         // Append failed; show error modal and keep status as Pending
         const msg = (res && res.message) ? res.message : 'Unknown error appending order';
@@ -241,7 +256,7 @@ export default function Orders() {
       console.error('appendOrder failed', err);
       setErrorModalMessage(err.message || 'Error saving order');
       setShowErrorModal(true);
-      orderToAppend.status = 'Pending';
+      orderToAppend.status = defaultStatus;
     }
 
     // Update local state (either Ordered or Pending)
@@ -254,51 +269,7 @@ export default function Orders() {
     setAddUrgent(false);
   };
   
-  const handleEditClick = (order, index) => {
-    setCurrentEditOrder(order);
-    setCurrentEditIndex(index);
-    setEditDate(order.date);
-    setEditItem(order.item);
-    setEditBrand(order.brand);
-    setEditQty(order.qty.toString());
-    setEditStatus(order.status);
-    setShowEditModal(true);
-  };
-  
-  const handleEditSave = async () => {
-    if (currentEditIndex === null) return setShowEditModal(false);
-
-    try {
-      const existing = orders[currentEditIndex] || {};
-      const orderToUpdate = {
-        ...existing,
-        item: editItem,
-        brand: editBrand,
-        qty: parseInt(editQty, 10),
-        status: editStatus,
-        urgent: editUrgent
-      };
-
-      const res = await updateOrder(orderToUpdate);
-      if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update order');
-
-      const updatedOrders = [...orders];
-      updatedOrders[currentEditIndex] = { ...updatedOrders[currentEditIndex], item: editItem, brand: editBrand, qty: parseInt(editQty, 10), status: editStatus };
-      setOrders(updatedOrders);
-    } catch (err) {
-      console.error('handleEditSave error', err);
-      setErrorModalMessage(err.message || 'Failed to save changes');
-      setShowErrorModal(true);
-    } finally {
-      setShowEditModal(false);
-    }
-  };
-  
-  const handleEditClose = () => {
-    setShowEditModal(false);
-    setCurrentEditOrder(null);
-    setCurrentEditIndex(null);
-  };
+  // Edit modal handlers removed; using Mark Urgent and Discrepancy flows instead
   
   return (
     <>
@@ -318,97 +289,47 @@ export default function Orders() {
         useReactState={true}
       />
       
-      {/* Edit Order Modal */}
+      {/* Discrepancy Modal (for marking discrepancies with notes) */}
       <Modal
-        id="editOrderModal"
-        title="Edit Order"
+        id="discrepancyModal"
+        title="Mark Discrepancy"
         body={
-          <form>
-            <div className="mb-3" style={{ position: 'relative' }}>
-              <label htmlFor="editItem" className="form-label">Item</label>
-              <input 
-                type="text" 
-                id="editItem" 
-                className="form-control"
-                value={editItem}
-                onChange={handleEditItemChange}
-                onKeyDown={(e) => handleAddItemKeyDown(e, 'edit')}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                onFocus={() => updateSuggestions(editItem)}
-              />
-
-              {/* Suggestions dropdown reused for edit input */}
-              {showSuggestions && suggestions.length > 0 && (
-                <ul className="list-group position-absolute" style={{ zIndex: 1000, width: '100%', maxHeight: '240px', overflowY: 'auto' }}>
-                  {suggestions.map((s, i) => (
-                    <li key={i}
-                      className={`list-group-item list-group-item-action ${i === activeSuggestion ? 'active' : ''}`}
-                      onMouseDown={() => chooseSuggestion(s, 'edit')}
-                      onMouseEnter={() => setActiveSuggestion(i)}
-                    >
-                      <div style={{ fontSize: '0.95rem' }}>{s.item}</div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          <div>
             <div className="mb-3">
-              <label htmlFor="editBrand" className="form-label">Brand</label>
-              <input 
-                type="text" 
-                id="editBrand" 
-                className="form-control"
-                value={editBrand}
-                onChange={(e) => setEditBrand(e.target.value)}
-              />
+              <label htmlFor="discrepancyNotes" className="form-label">Notes</label>
+              <textarea id="discrepancyNotes" className="form-control" rows={4} value={discrepancyNotes} onChange={e => setDiscrepancyNotes(e.target.value)} />
             </div>
-            <div className="mb-3">
-              <label htmlFor="editQty" className="form-label">Qty</label>
-              <input 
-                type="number" 
-                id="editQty" 
-                className="form-control"
-                value={editQty}
-                onChange={(e) => setEditQty(e.target.value)}
-              />
-            </div>
-            <div className="form-check mb-3">
-              <input className="form-check-input" type="checkbox" value="" id="editUrgent" checked={editUrgent} onChange={e => setEditUrgent(e.target.checked)} />
-              <label className="form-check-label" htmlFor="editUrgent">Urgent?</label>
-            </div>
-            <div className="mb-3">
-              <label htmlFor="editStatus" className="form-label">Status</label>
-              <input 
-                type="text" 
-                id="editStatus" 
-                className="form-control"
-                value={editStatus}
-                readOnly
-                disabled
-              />
-            </div>
-          </form>
+            <div className="text-muted">These notes will be saved to the sheet's Comments column.</div>
+          </div>
         }
         footer={
           <>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              onClick={handleEditClose}
-            >
-              Close
-            </button>
-            <button 
-              type="button" 
-              className="btn btn-primary"
-              onClick={handleEditSave}
-            >
-              Save changes
-            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowDiscrepancyModal(false); setDiscrepancyNotes(''); }}>Cancel</button>
+            <button type="button" className="btn btn-danger" onClick={async () => {
+              // currentEditIndex should be set to the row we want to mark discrepancy on
+              if (currentEditIndex === null) return setShowDiscrepancyModal(false);
+              try {
+                const targetOrder = orders[currentEditIndex] || {};
+                const orderToUpdate = { ...targetOrder, status: 'Discrepancy', comments: discrepancyNotes };
+                const res = await updateOrder(orderToUpdate);
+                if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
+                const updated = [...orders];
+                updated[currentEditIndex] = { ...updated[currentEditIndex], status: 'Discrepancy' };
+                setOrders(updated);
+              } catch (err) {
+                console.error('discrepancy save error', err);
+                setErrorModalMessage(err.message || 'Failed to save discrepancy');
+                setShowErrorModal(true);
+              } finally {
+                setShowDiscrepancyModal(false);
+                setDiscrepancyNotes('');
+                setCurrentEditIndex(null);
+              }
+            }}>Save Notes</button>
           </>
         }
-        show={showEditModal}
-        onClose={handleEditClose}
+        show={showDiscrepancyModal}
+        onClose={() => { setShowDiscrepancyModal(false); setDiscrepancyNotes(''); setCurrentEditIndex(null); }}
         useReactState={true}
       />
       
@@ -431,6 +352,10 @@ export default function Orders() {
                     onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                     onFocus={() => updateSuggestions(addItem)}
                 />
+
+                {!isValidAddItem() && addItem && (
+                  <div className="form-text text-danger">Item must match one of the master items.</div>
+                )}
 
                 {showSuggestions && suggestions.length > 0 && (
                   <ul className="list-group position-absolute" style={{ zIndex: 1000, width: '100%', maxHeight: '240px', overflowY: 'auto' }}>
@@ -474,7 +399,7 @@ export default function Orders() {
               </div>
             </div>
             <div className="col-12 col-md-2 d-flex align-items-center">
-              <button type="submit" className="btn btn-success w-100">
+              <button type="submit" className="btn btn-success w-100" disabled={!isValidAddItem()}>
                 Add Order
               </button>
             </div>
@@ -501,6 +426,7 @@ export default function Orders() {
                 <th>Date</th>
                 <th>Item</th>
                 <th>Qty</th>
+                <th>Urgent</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -511,6 +437,7 @@ export default function Orders() {
                   <td className="text-center">{order.date}</td>
                   <td>{order.item}{order.brand ? ` (${order.brand})` : ''}</td>
                   <td className="text-center">{order.qty}</td>
+                  <td className="text-center">{order.urgent ? '✔' : ''}</td>
                   <td className="text-center">
                     <span className={`badge ${
                       ['Ordered','Received'].includes(order.status) ? 'text-success' :
@@ -522,30 +449,44 @@ export default function Orders() {
                     </span>
                   </td>
                   <td>
-                    {order.status === 'Pending' && (
-                      <button 
-                        className="btn btn-sm btn-outline-secondary small py-0 px-2"
-                        onClick={() => handleEditClick(order, index)}
+                    {/* Mark Urgent replaces Edit. Only show when Ordered and not urgent */}
+                    {order.status === 'Ordered' && !order.urgent && (
+                      <button
+                        className="btn btn-sm btn-outline-primary small py-0 px-2 me-1"
+                        onClick={async () => {
+                          try {
+                            const orderToUpdate = { ...order, urgent: true };
+                            const res = await updateOrder(orderToUpdate);
+                            if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
+                            const updated = [...orders];
+                            updated[index] = { ...updated[index], urgent: true };
+                            setOrders(updated);
+                          } catch (err) {
+                            console.error('mark urgent error', err);
+                            setErrorModalMessage(err.message || 'Failed to mark urgent');
+                            setShowErrorModal(true);
+                          }
+                        }}
                       >
-                        Edit
+                        Mark Urgent
                       </button>
                     )}
 
                     {order.status === 'Ordered' && (
-                      <div className="d-flex gap-1">
+                      <>
                         <button
-                          className="btn btn-sm btn-outline-success small py-0 px-2"
+                          className="btn btn-sm btn-outline-success small py-0 px-2 me-1"
                           onClick={() => markReceivedOrDiscrepancy(order, index, 'Received')}
                         >
                           Mark Received
                         </button>
                         <button
                           className="btn btn-sm btn-outline-danger small py-0 px-2"
-                          onClick={() => markReceivedOrDiscrepancy(order, index, 'Discrepancy')}
+                          onClick={() => { setCurrentEditIndex(index); setShowDiscrepancyModal(true); }}
                         >
                           Mark Discrepancy
                         </button>
-                      </div>
+                      </>
                     )}
                   </td>
                 </tr>

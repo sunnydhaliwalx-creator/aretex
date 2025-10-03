@@ -168,12 +168,14 @@ export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 
       // Keep only rows within last 12 months (>= twelveMonthsAgo)
       if (parsedDate < twelveMonthsAgo) continue;
 
-  const inventoryItem = row[2] || '';
-  const qty = row[3] !== undefined && row[3] !== '' ? Number(row[3]) : null;
-  const status = row[6] || '';
+      const inventoryItem = row[2] || '';
+      const qty = row[3] !== undefined && row[3] !== '' ? Number(row[3]) : null;
+      // New layout: E=Urgent (col5 index4), F=Status (col6 index5), G=Comments (col7 index6)
+      const urgent = (row[4] || '').toString().trim() === 'Y';
+      const status = row[5] || '';
 
-  // include 1-based spreadsheet row number so callers can update rows
-  results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status, spreadsheetRow: i + 1 });
+      // include 1-based spreadsheet row number so callers can update rows
+      results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status, urgent, spreadsheetRow: i + 1 });
     }
 
     // Sort by date descending (newest first)
@@ -311,27 +313,27 @@ export async function appendOrder(order) {
 
     const itemValue = order.brand ? `${order.item} (${order.brand})` : (order.item || '');
 
-    // Write columns A:D (date, pharmacyName, item, qty) using updateRange
-    // If the caller supplied a date use it, otherwise use current date; format for Sheets as MM/DD/YYYY HH:mm
+    // Write columns A:G (date, pharmacyCode, item, qty, urgent(E), status(F), comments(G))
     const rawDate = order.date !== undefined && order.date !== null && order.date !== '' ? order.date : new Date();
     const dateValue = formatDateForSheets(rawDate);
 
-    const aToDValues = [[
+    const urgentFlag = order.urgent ? 'Y' : '';
+    const statusValue = order.status || 'Ordered';
+    const commentsValue = order.comments || '';
+
+    const aToGValues = [[
       dateValue,
       order.pharmacyCode || '',
       itemValue,
-      order.qty === undefined ? '' : order.qty
+      order.qty === undefined ? '' : order.qty,
+      urgentFlag,
+      statusValue,
+      commentsValue
     ]];
 
-    const rangeAD = `A${nextRow}:D${nextRow}`;
-
-    console.log('appendOrder rangeAD',rangeAD,'aToDValues:', aToDValues,'spreadsheetId:',spreadsheetId,'worksheetName:',worksheetName);
-    await sheetsAPI.updateRange(spreadsheetId, worksheetName, rangeAD, aToDValues);
-
-    // Write columns G (status) and H (urgent flag) together so we don't overwrite E and F
-    const urgentFlag = order.urgent ? 'Y' : '';
-    const rangeGH = `G${nextRow}:H${nextRow}`;
-    await sheetsAPI.updateRange(spreadsheetId, worksheetName, rangeGH, [['Ordered', urgentFlag]]);
+    const rangeAtoG = `A${nextRow}:G${nextRow}`;
+    console.log('appendOrder rangeAtoG', rangeAtoG, 'values:', aToGValues);
+    await sheetsAPI.updateRange(spreadsheetId, worksheetName, rangeAtoG, aToGValues);
 
     return { success: true, row: nextRow };
   } catch (error) {
@@ -357,12 +359,13 @@ export async function updateOrder(order) {
     // Build updates array: { spreadsheetRow, spreadsheetCol, spreadsheetValue }
     const updates = [];
 
-    // mapping: col2=pharmacyName, col3=item, col4=qty, col7=status, col8=urgent
-    if (order.pharmacyName !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 2, spreadsheetValue: order.pharmacyName });
-    if (order.item !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 3, spreadsheetValue: order.item });
-    if (order.qty !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 4, spreadsheetValue: order.qty });
-    if (order.status !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 7, spreadsheetValue: order.status });
-    if (order.urgent !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 8, spreadsheetValue: order.urgent ? 'Y' : '' });
+  // New mapping: col2=pharmacyName, col3=item, col4=qty, col5=urgent, col6=status, col7=comments
+  if (order.pharmacyName !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 2, spreadsheetValue: order.pharmacyName });
+  if (order.item !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 3, spreadsheetValue: order.item });
+  if (order.qty !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 4, spreadsheetValue: order.qty });
+  if (order.urgent !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 5, spreadsheetValue: order.urgent ? 'Y' : '' });
+  if (order.status !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 6, spreadsheetValue: order.status });
+  if (order.comments !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 7, spreadsheetValue: order.comments });
 
     if (updates.length === 0) return { success: true, message: 'Nothing to update' };
 
