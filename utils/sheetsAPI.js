@@ -723,9 +723,10 @@ export const parseClientSheetData = {
 }
 
 // Additional helper to fetch filtered orders for the Orders page
-export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Current', pharmacy = 'CLI') {
+export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 'CLI') {
   try {
-    if (!spreadsheetId) return [];
+    const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID;
+    console.log('fetchFilteredOrders',{spreadsheetId, worksheetName, pharmacy});
 
     // Read entire sheet (client helper will call /api/googleSheets)
     const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
@@ -771,11 +772,12 @@ export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Curren
       // Keep only rows within last 12 months (>= twelveMonthsAgo)
       if (parsedDate < twelveMonthsAgo) continue;
 
-      const inventoryItem = row[2] || '';
-      const qty = row[3] !== undefined && row[3] !== '' ? Number(row[3]) : null;
-      const status = row[6] || '';
+  const inventoryItem = row[2] || '';
+  const qty = row[3] !== undefined && row[3] !== '' ? Number(row[3]) : null;
+  const status = row[6] || '';
 
-      results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status });
+  // include 1-based spreadsheet row number so callers can update rows
+  results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status, spreadsheetRow: i + 1 });
     }
 
     // Sort by date descending (newest first)
@@ -785,6 +787,102 @@ export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Curren
   } catch (error) {
     console.error('fetchFilteredOrders error:', error);
     return [];
+  }
+}
+
+
+/**
+ * Find the first spreadsheet row (1-based) where all specified columns are empty.
+ * rows: array of row arrays as returned from sheetsAPI.readSheet
+ * colsToCheck: array of 1-based column numbers to check (e.g., [1,2,3,4] for A-D)
+ * Returns: 1-based row index where all specified columns are blank after the first seen data row.
+ */
+export function findFirstEmptyRow(rows, colsToCheck = [1,2,3,4]) {
+  try {
+    if (!Array.isArray(rows) || rows.length === 0) return 1;
+
+    let seenData = false;
+    // Iterate rows top-to-bottom
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || [];
+
+      // Check each requested column (convert 1-based to 0-based index)
+      let anyNonEmpty = false;
+      for (let j = 0; j < colsToCheck.length; j++) {
+        const col = colsToCheck[j] - 1;
+        const v = row[col];
+        if (v !== undefined && v !== null && String(v).trim() !== '') {
+          anyNonEmpty = true;
+          break;
+        }
+      }
+
+      if (anyNonEmpty) {
+        seenData = true;
+        continue; // this row contains data in one of the monitored columns
+      }
+
+      // If row has all monitored columns empty and we've already seen data, return this row index (1-based)
+      if (!anyNonEmpty && seenData) return i + 1;
+    }
+
+    // If we scanned all rows and didn't find an empty monitored row after data, append after last row
+    return rows.length + 1;
+  } catch (err) {
+    console.warn('findFirstEmptyRow error, defaulting to append', err);
+    return (Array.isArray(rows) ? rows.length : 0) + 1;
+  }
+}
+
+// Format a Date (or date-parsable value) into Google Sheets friendly 'MM/DD/YYYY HH:mm' local time
+export function formatDateForSheets(d) {
+  try {
+    const date = (d instanceof Date) ? d : new Date(d);
+    if (isNaN(date)) return '';
+
+    const pad = (n) => (n < 10 ? '0' + n : '' + n);
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const year = date.getFullYear();
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+
+    return `${month}/${day}/${year} ${hours}:${minutes}`;
+  } catch (err) {
+    console.warn('formatDateForSheets error', err);
+    return '';
+  }
+}
+
+
+// Updates an order. It should not update the date column (col 1)
+// Expects an order object that includes spreadsheetRow (1-based) and any of: pharmacyName, item, qty, status, urgent
+export async function updateOrder(order) {
+  const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID;
+  const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME || 'Current';
+
+  try {
+    if (!order || typeof order !== 'object') throw new Error('Invalid order object provided for updateOrder');
+    const row = order.spreadsheetRow;
+    if (!row) throw new Error('order.spreadsheetRow is required to update order');
+
+    // Build updates array: { spreadsheetRow, spreadsheetCol, spreadsheetValue }
+    const updates = [];
+
+    // mapping: col2=pharmacyName, col3=item, col4=qty, col7=status, col8=urgent
+    if (order.pharmacyName !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 2, spreadsheetValue: order.pharmacyName });
+    if (order.item !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 3, spreadsheetValue: order.item });
+    if (order.qty !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 4, spreadsheetValue: order.qty });
+    if (order.status !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 7, spreadsheetValue: order.status });
+    if (order.urgent !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 8, spreadsheetValue: order.urgent ? 'Y' : '' });
+
+    if (updates.length === 0) return { success: true, message: 'Nothing to update' };
+
+    const result = await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
+    return { success: true, result };
+  } catch (error) {
+    console.error('updateOrder error:', error);
+    return { success: false, message: error.message };
   }
 }
 
@@ -837,25 +935,34 @@ export async function fetchMasterItems(
 
 
 // Append a single order row to the Current worksheet without overwriting formula columns
-export async function appendOrder(order, spreadsheetId = process.env.ACCOUNTS_GOOGLE_SPREADSHEET_ID, worksheetName = 'Current') {
+export async function appendOrder(order) {
   try {
-    if (!spreadsheetId) throw new Error('No spreadsheetId provided for appendOrder');
+    const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID
+    const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME;
 
     // Read existing sheet to determine next row
-    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
-    const nextRow = (Array.isArray(data) ? data.length : 0) + 1; // next available 1-based row
+    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
+
+    // Use helper to find the first empty row where columns A-D are blank
+    const nextRow = findFirstEmptyRow(data, [1,2,3,4]);
 
     const itemValue = order.brand ? `${order.item} (${order.brand})` : (order.item || '');
 
     // Write columns A:D (date, pharmacyName, item, qty) using updateRange
+    // If the caller supplied a date use it, otherwise use current date; format for Sheets as MM/DD/YYYY HH:mm
+    const rawDate = order.date !== undefined && order.date !== null && order.date !== '' ? order.date : new Date();
+    const dateValue = formatDateForSheets(rawDate);
+
     const aToDValues = [[
-      order.date !== undefined ? order.date : '',
-      order.pharmacyName || '',
+      dateValue,
+      order.pharmacyCode || '',
       itemValue,
       order.qty === undefined ? '' : order.qty
     ]];
 
     const rangeAD = `A${nextRow}:D${nextRow}`;
+
+    console.log('appendOrder rangeAD',rangeAD,'aToDValues:', aToDValues,'spreadsheetId:',spreadsheetId,'worksheetName:',worksheetName);
     await sheetsAPI.updateRange(spreadsheetId, worksheetName, rangeAD, aToDValues);
 
     // Write columns G (status) and H (urgent flag) together so we don't overwrite E and F

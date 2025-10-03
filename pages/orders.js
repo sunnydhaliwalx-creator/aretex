@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchFilteredOrders, fetchMasterItems, appendOrder } from '../utils/sheetsAPI';
+import { fetchFilteredOrders, fetchMasterItems, appendOrder, updateOrder } from '../utils/sheetsAPI';
 
 export default function Orders() {
   // State management
@@ -18,7 +18,6 @@ export default function Orders() {
   const [errorModalMessage, setErrorModalMessage] = useState('');
   
   // Form state for adding orders
-  const [addDate, setAddDate] = useState('');
   const [addItem, setAddItem] = useState('');
   const [addBrand, setAddBrand] = useState('');
   const [addQty, setAddQty] = useState('');
@@ -51,26 +50,23 @@ export default function Orders() {
       }
       
       // Fetch client orders
-      const rows = await fetchFilteredOrders(spreadsheetId, 'Current', pharmacyCode);
+      const rows = await fetchFilteredOrders('Current', pharmacyCode);
+      console.log('pharmacyCode',pharmacyCode,'rows',rows);
       
       // Fetch master items
       const items = await fetchMasterItems();
       setMasterItems(items);
       
       if (Array.isArray(rows) && rows.length > 0) {
-        // Map to orders shape used in this page
-        const mapped = rows.map(r => ({ date: r.date, item: r.inventoryItem, brand: '', qty: r.qty || 0, status: r.status || 'Pending' }));
+        // Map to orders shape used in this page; include spreadsheetRow so we can update
+        const mapped = rows.map(r => ({ date: r.date, item: r.inventoryItem, brand: '', qty: r.qty || 0, status: r.status || 'Pending', spreadsheetRow: r.spreadsheetRow }));
         setOrders(mapped);
         setFilteredOrders(mapped);
         return;
       }
       
       // Fallback sample data
-      const initialOrders = [
-        { date: '2025-09-02', item: 'Sodium chloride eye drops 5% 10ml', brand: 'Alissa Healthcare brand', qty: 10, status: 'Pending' },
-        { date: '2025-09-02', item: 'Erythromycin tablets e/c 250mg 28', brand: 'Bristol brand', qty: 5, status: 'Received' },
-        { date: '2025-09-02', item: 'Exemestane tablets 25mg 30', brand: '', qty: 20, status: 'Unavailable' },
-      ];
+      const initialOrders = [];
       setOrders(initialOrders);
       setFilteredOrders(initialOrders);
     };
@@ -99,21 +95,37 @@ export default function Orders() {
   const handleFilterChange = (e) => {
     setFilterInput(e.target.value);
   };
+
+  // allowed for orders marked Ordered and changes status to Received or Discrepancy
+  const markReceivedOrDiscrepancy = async (order, index, status) => {
+    try {
+      const orderToUpdate = { ...orders[index], status: status };
+      const res = await updateOrder(orderToUpdate);
+      if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
+
+      const updatedOrders = [...orders];
+      updatedOrders[index] = { ...updatedOrders[index], status: status };
+      setOrders(updatedOrders);
+    } catch (err) {
+      console.error('markReceivedOrDiscrepancy error', err);
+      setErrorModalMessage(err.message || 'Failed to mark received');
+      setShowErrorModal(true);
+    }
+  };
   
   const handleAddOrder = async (e) => {
     e.preventDefault();
 
     const newOrder = {
-      date: addDate,
       item: addItem,
       brand: addBrand,
       qty: parseInt(addQty, 10),
-      status: 'Received', // Default status
+      status: 'Ordered', // Default status
     };
 
     const orderToAppend = {
       ...newOrder,
-      pharmacyName: sessionData?.session?.pharmacyName || '',
+      pharmacyCode: sessionData?.session?.pharmacyCode || '',
       urgent: addUrgent
     };
 
@@ -139,7 +151,6 @@ export default function Orders() {
     setOrders(prev => [...prev, { ...orderToAppend }]);
 
     // Reset form
-    setAddDate('');
     setAddItem('');
     setAddBrand('');
     setAddQty('');
@@ -157,19 +168,33 @@ export default function Orders() {
     setShowEditModal(true);
   };
   
-  const handleEditSave = () => {
-    if (currentEditIndex !== null) {
-      const updatedOrders = [...orders];
-      updatedOrders[currentEditIndex] = {
-        date: editDate,
+  const handleEditSave = async () => {
+    if (currentEditIndex === null) return setShowEditModal(false);
+
+    try {
+      const existing = orders[currentEditIndex] || {};
+      const orderToUpdate = {
+        ...existing,
         item: editItem,
         brand: editBrand,
         qty: parseInt(editQty, 10),
         status: editStatus,
+        urgent: editUrgent
       };
+
+      const res = await updateOrder(orderToUpdate);
+      if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update order');
+
+      const updatedOrders = [...orders];
+      updatedOrders[currentEditIndex] = { ...updatedOrders[currentEditIndex], item: editItem, brand: editBrand, qty: parseInt(editQty, 10), status: editStatus };
       setOrders(updatedOrders);
+    } catch (err) {
+      console.error('handleEditSave error', err);
+      setErrorModalMessage(err.message || 'Failed to save changes');
+      setShowErrorModal(true);
+    } finally {
+      setShowEditModal(false);
     }
-    setShowEditModal(false);
   };
   
   const handleEditClose = () => {
@@ -207,16 +232,6 @@ export default function Orders() {
         title="Edit Order"
         body={
           <form>
-            <div className="mb-3">
-              <label htmlFor="editDate" className="form-label">Date</label>
-              <input 
-                type="date" 
-                id="editDate" 
-                className="form-control"
-                value={editDate}
-                onChange={(e) => setEditDate(e.target.value)}
-              />
-            </div>
             <div className="mb-3">
               <label htmlFor="editItem" className="form-label">Item</label>
               <input 
@@ -260,6 +275,7 @@ export default function Orders() {
                 className="form-control"
                 value={editStatus}
                 readOnly
+                disabled
               />
             </div>
           </form>
@@ -293,16 +309,8 @@ export default function Orders() {
         {/* Add Order Form */}
         <form onSubmit={handleAddOrder} className="mb-4">
             <div className="row g-2 py-2 border rounded bg-light">
-                <div className="col-12 col-sm-6 col-md-2">
-                <input 
-                    type="date" 
-                    className="form-control" 
-                    required
-                    value={addDate}
-                    onChange={(e) => setAddDate(e.target.value)}
-                />
-                </div>
-                <div className="col-12 col-sm-6 col-md-4">
+            {/* Date is auto-filled server-side; no date input required */}
+            <div className="col-12 col-sm-6 col-md-5">
                 <input 
                     type="text" 
                     className="form-control" 
@@ -312,8 +320,8 @@ export default function Orders() {
                     value={addItem}
                     onChange={(e) => setAddItem(e.target.value)}
                 />
-                </div>
-                <div className="col-12 col-sm-6 col-md-2">
+            </div>
+            <div className="col-12 col-sm-6 col-md-3">
                 <input 
                     type="text" 
                     className="form-control" 
@@ -322,8 +330,8 @@ export default function Orders() {
                     value={addBrand}
                     onChange={(e) => setAddBrand(e.target.value)}
                 />
-                </div>
-                <div className="col-12 col-sm-6 col-md-2">
+            </div>
+            <div className="col-12 col-sm-6 col-md-1">
                 <input 
                     type="number" 
                     className="form-control" 
@@ -332,18 +340,21 @@ export default function Orders() {
                     value={addQty}
                     onChange={(e) => setAddQty(e.target.value)}
                 />
-                </div>
-                <div className="col-12 col-md-2 d-flex align-items-center">
-                <div className="form-check me-2">
-                  <input className="form-check-input" type="checkbox" value="" id="addUrgent" checked={addUrgent} onChange={e => setAddUrgent(e.target.checked)} />
-                  <label className="form-check-label" htmlFor="addUrgent">Urgent?</label>
-                </div>
-                <button type="submit" className="btn btn-success w-100">
-                    Add Order
-                </button>
-                </div>
             </div>
-            </form>
+            <div className="col-12 col-md-1 d-flex align-items-center">
+              <div className="form-check me-2">
+                <input className="form-check-input" type="checkbox" value="" id="addUrgent" checked={addUrgent} onChange={e => setAddUrgent(e.target.checked)} />
+                <label className="form-check-label" htmlFor="addUrgent">Urgent?</label>
+              </div>
+            </div>
+            <div className="col-12 col-md-2 d-flex align-items-center">
+              <button type="submit" className="btn btn-success w-100">
+                Add Order
+              </button>
+            </div>
+
+          </div>
+        </form>
         
         {/* Filter Input */}
         <div className="mb-1">
@@ -376,9 +387,9 @@ export default function Orders() {
                   <td className="text-center">{order.qty}</td>
                   <td className="text-center">
                     <span className={`badge ${
-                      ['Ordered','Received'].includes(order.status) ? 'bg-success' :
-                      ['Hold','Pending','Re-Check','To Be Ordered'].includes(order.status) ? 'bg-warning' :
-                      ['Cancelled','Unavailable','Discrepancy'].includes(order.status) ? 'bg-danger' :
+                      ['Ordered','Received'].includes(order.status) ? 'text-success' :
+                      ['Hold','Pending','Re-Check','To Be Ordered'].includes(order.status) ? 'text-warning' :
+                      ['Cancelled','Unavailable','Discrepancy'].includes(order.status) ? 'text-danger' :
                       'bg-warning text-dark'
                     }`}>
                       {order.status}
@@ -387,11 +398,28 @@ export default function Orders() {
                   <td>
                     {order.status === 'Pending' && (
                       <button 
-                        className="btn btn-sm btn-outline-secondary small py-1 px-2"
+                        className="btn btn-sm btn-outline-secondary small py-0 px-2"
                         onClick={() => handleEditClick(order, index)}
                       >
                         Edit
                       </button>
+                    )}
+
+                    {order.status === 'Ordered' && (
+                      <div className="d-flex gap-1">
+                        <button
+                          className="btn btn-sm btn-outline-success small py-0 px-2"
+                          onClick={() => markReceivedOrDiscrepancy(order, index, 'Received')}
+                        >
+                          Mark Received
+                        </button>
+                        <button
+                          className="btn btn-sm btn-outline-danger small py-0 px-2"
+                          onClick={() => markReceivedOrDiscrepancy(order, index, 'Discrepancy')}
+                        >
+                          Mark Discrepancy
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

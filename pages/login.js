@@ -48,7 +48,7 @@ export default function Login() {
             // Build session object from columns 1-6 (0-based indexes 0-5)
             const session = {
                 file: matched[0] || '',
-                pharmacyCode: matched[1] || '',
+                pharmacyCode: matched[1].replace('TEST ','') || '',
                 pharmacyName: matched[2] || '',
                 username: matched[3] || '',
                 password: matched[4] || '',
