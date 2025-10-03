@@ -17,9 +17,21 @@ async function findSessionForCredentials(username, password) {
 
       console.log({rowUsername, username, rowPassword, password});
       if (rowUsername === username && rowPassword === password) {
+        const matchedGroupCode = (row[1] || '').toString().replace('TEST ', '').trim();
+
+        // collect all pharmacy codes for rows that share this groupCode
+        const groupSet = new Set();
+        for (const r of data) {
+          if (!r) continue;
+          const rGroup = (r[1] || '').toString().replace('TEST ', '').trim();
+          const rPharm = (r[2] || '').toString().replace('TEST ', '').trim();
+          if (rGroup && rPharm && rGroup === matchedGroupCode) groupSet.add(rPharm);
+        }
+
         return {
           file: row[0] || '',
-          groupCode: (row[1] || '').toString().replace('TEST ', ''),
+          groupCode: matchedGroupCode,
+          groupPharmacyCodes: Array.from(groupSet),
           pharmacyCode: (row[2] || '').toString().replace('TEST ', ''),
           pharmacyName: row[3] || '',
           username: row[4] || '',

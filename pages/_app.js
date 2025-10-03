@@ -3,6 +3,7 @@ import 'bootstrap-icons/font/bootstrap-icons.css'; // Bootstrap Icons
 import '../styles/custom.css'; // Your custom overrides last
 
 import { useEffect } from 'react';
+import Head from 'next/head';
 import Navbar from '../components/Navbar';
 
 export default function MyApp({ Component, pageProps }) {
@@ -25,6 +26,10 @@ export default function MyApp({ Component, pageProps }) {
 
   return (
     <>
+      <Head>
+        <link rel="icon" href="/favicon.ico" />
+        <meta name="theme-color" content="#0d6efd" />
+      </Head>
       <Navbar />
       <Component {...pageProps} />
     </>

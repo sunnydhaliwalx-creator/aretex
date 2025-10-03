@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchFilteredOrders, fetchMasterInventorItemsOptions, appendOrder, updateOrder } from '../utils/sheetsAPI';
+import { fetchFilteredOrders, fetchMasterInventoryItemsOptions, appendOrder, updateOrder } from '../utils/sheetsAPI';
 
 export default function Orders() {
   // State management
@@ -60,7 +60,7 @@ export default function Orders() {
       console.log('pharmacyCode',pharmacyCode,'rows',rows);
       
       // Fetch master items
-  const items = await fetchMasterInventorItemsOptions();
+  const items = await fetchMasterInventoryItemsOptions();
       setMasterItems(items);
       
       if (Array.isArray(rows) && rows.length > 0) {

@@ -107,6 +107,9 @@ export default function Navbar() {
                   <Link href="/orders" className="nav-link">Orders</Link>
                 </li>
                 <li className="nav-item">
+                  <Link href="/usage" className="nav-link">Usage</Link>
+                </li>
+                <li className="nav-item">
                   <Link href="/stock_count" className="nav-link">Stock Count</Link>
                 </li>
                 <li className="nav-item">

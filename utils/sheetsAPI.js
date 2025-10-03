@@ -254,7 +254,7 @@ export function formatDateForSheets(d) {
 
 
 // Fetch master items from the ProductFile worksheet
-export async function fetchMasterInventorItemsOptions(
+export async function fetchMasterInventoryItemsOptions(
   spreadsheetId = process.env.NEXT_PUBLIC_MASTER_INVENTORY_ITEMS_GOOGLE_SPREADSHEET_ID,
   worksheetName = process.env.NEXT_PUBLIC_MASTER_INVENTORY_ITEMS_WORKSHEET_NAME
 ) {
@@ -293,7 +293,7 @@ export async function fetchMasterInventorItemsOptions(
     console.log('Master Products List:', results);
     return results;
   } catch (error) {
-    console.error('fetchMasterInventorItemsOptions error:', error);
+    console.error('fetchMasterInventoryItemsOptions error:', error);
     return [];
   }
 }
@@ -374,5 +374,78 @@ export async function updateOrder(order) {
   } catch (error) {
     console.error('updateOrder error:', error);
     return { success: false, message: error.message };
+  }
+}
+
+
+/**
+ * Fetch stock rows for items of type 'Tender' and return usage per pharmacy.
+ * @param {string} spreadsheetId - Spreadsheet to read
+ * @param {Array<string>} groupPharmacyCodes - optional array of pharmacy codes to include (matches prefix before ' - Usage')
+ * @returns {Promise<Array<{item: string, pharmacies: Record<string, number|null|string>}>>}
+ */
+export async function fetchStock(spreadsheetId, groupPharmacyCodes = []) {
+  try {
+    if (!spreadsheetId) return [];
+    const suffix = ' - Usage';
+
+    const worksheetName = 'Stock';
+    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
+    if (!Array.isArray(data) || data.length < 2) return [];
+
+    // Row 1 ignored; Row 2 (index 1) contains headers
+    const headers = data[1] || [];
+
+    // Find all header columns that end with suffix
+    const usageCols = [];
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i] !== undefined && headers[i] !== null ? String(headers[i]).trim() : '';
+      if (!h) continue;
+      if (h.endsWith(suffix)) {
+        const prefix = h.slice(0, -suffix.length);
+        // If groupPharmacyCodes provided, only include matching prefixes (case-insensitive)
+        if (Array.isArray(groupPharmacyCodes) && groupPharmacyCodes.length > 0) {
+          const matched = groupPharmacyCodes.some(code => String(code).trim().toLowerCase() === prefix.toLowerCase());
+          if (!matched) continue;
+        }
+        usageCols.push({ index: i, label: h.replace(suffix,''), prefix });
+      }
+    }
+
+    console.log('usageCols',usageCols)
+
+    const results = [];
+
+    // Data rows start at index 2 (skip row 0 and header row 1)
+    for (let r = 2; r < data.length; r++) {
+      const row = data[r] || [];
+
+      // Column 3 is index 2
+      const typeCell = row[2] !== undefined && row[2] !== null ? String(row[2]).trim() : '';
+      if (typeCell !== 'Tender') continue;
+
+      const item = row[1] !== undefined && row[1] !== null ? row[1] : '';
+      const pharmacies = {};
+
+      for (const col of usageCols) {
+        const cell = row[col.index];
+        let value = null;
+        if (cell === undefined || cell === null || String(cell).trim() === '') {
+          value = null;
+        } else {
+          // try parse number (strip commas)
+          const maybeNum = Number(String(cell).replace(/,/g, '').trim());
+          value = Number.isFinite(maybeNum) ? maybeNum : String(cell);
+        }
+        pharmacies[col.label] = value;
+      }
+
+      results.push({ item, pharmacies });
+    }
+
+    return results;
+  } catch (err) {
+    console.error('fetchStock error:', err);
+    return [];
   }
 }
