@@ -66,22 +66,28 @@ export default function UsagePage() {
 
 			{!loading && !error && (
 				<div className="table-responsive">
-					<table className="table table-sm table-light table-striped table-bordered table-hover">
+					<table className="table table-light table-striped table-bordered table-hover">
 						<thead className="table-light table-striped">
 							<tr>
 								<th>Item</th>
-								{pharmacyKeys.map((k) => (
-									<th className="text-center" key={k}>{k}</th>
+								{pharmacyKeys.map((key) => (
+									<th className="text-center" key={key}>{key}</th>
 								))}
 							</tr>
 						</thead>
 						<tbody>
 							{rows.map((r, idx) => (
 								<tr key={idx}>
-									<td class="bg-light">{r.item}</td>
-									{pharmacyKeys.map((k) => (
-										<td className="text-center" key={k}>{r.pharmacies && (r.pharmacies[k] === null ? '' : r.pharmacies[k])}</td>
-									))}
+									<td className="bg-light">{r.item}</td>
+									{pharmacyKeys.map((key) => {
+										const p = r.pharmacies && r.pharmacies[key] ? r.pharmacies[key] : { inStockValue: null, usageValue: null };
+										return (
+											<td className="text-center" key={key}>
+												<div style={{fontWeight:600}}>{p.inStockValue === null ? '' : p.inStockValue}</div>
+												<div className="small text-muted">{p.usageValue === null ? '' : p.usageValue}</div>
+											</td>
+										);
+									})}
 								</tr>
 							))}
 						</tbody>

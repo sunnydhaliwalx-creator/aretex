@@ -387,7 +387,8 @@ export async function updateOrder(order) {
 export async function fetchStock(spreadsheetId, groupPharmacyCodes = []) {
   try {
     if (!spreadsheetId) return [];
-    const suffix = ' - Usage';
+    const inStockSuffix = ' - In Stock';
+    const usageSuffix = ' - Usage';
 
     const worksheetName = 'Stock';
     const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
@@ -395,30 +396,29 @@ export async function fetchStock(spreadsheetId, groupPharmacyCodes = []) {
 
     // Row 1 ignored; Row 2 (index 1) contains headers
     const headers = data[1] || [];
+    console.log('headers:', headers);
+    const prefixMap = {}
+    groupPharmacyCodes.forEach((code, idx, arr) => {
+      if (code) arr[idx] = String(code).trim();
 
-    // Find all header columns that end with suffix
-    const usageCols = [];
-    for (let i = 0; i < headers.length; i++) {
-      const h = headers[i] !== undefined && headers[i] !== null ? String(headers[i]).trim() : '';
-      if (!h) continue;
-      if (h.endsWith(suffix)) {
-        const prefix = h.slice(0, -suffix.length);
-        // If groupPharmacyCodes provided, only include matching prefixes (case-insensitive)
-        if (Array.isArray(groupPharmacyCodes) && groupPharmacyCodes.length > 0) {
-          const matched = groupPharmacyCodes.some(code => String(code).trim().toLowerCase() === prefix.toLowerCase());
-          if (!matched) continue;
-        }
-        usageCols.push({ index: i, label: h.replace(suffix,''), prefix });
-      }
-    }
+      const lookupInStockHeader = `${code}${inStockSuffix}`;
+      const lookupUsageHeader = `${code}${usageSuffix}`;
 
-    console.log('usageCols',usageCols)
+      prefixMap[code] = { inStockJsCol: headers.indexOf(lookupInStockHeader), usageJsCol: headers.indexOf(lookupUsageHeader) };
+
+    });
+
+    console.log('prefixMap:', prefixMap);
+
+    const prefixes = Object.keys(prefixMap);
+    if (prefixes.length === 0) return [];
 
     const results = [];
 
     // Data rows start at index 2 (skip row 0 and header row 1)
     for (let r = 2; r < data.length; r++) {
       const row = data[r] || [];
+      const spreadsheetRow = r + 1; // 1-based
 
       // Column 3 is index 2
       const typeCell = row[2] !== undefined && row[2] !== null ? String(row[2]).trim() : '';
@@ -427,20 +427,30 @@ export async function fetchStock(spreadsheetId, groupPharmacyCodes = []) {
       const item = row[1] !== undefined && row[1] !== null ? row[1] : '';
       const pharmacies = {};
 
-      for (const col of usageCols) {
-        const cell = row[col.index];
-        let value = null;
-        if (cell === undefined || cell === null || String(cell).trim() === '') {
-          value = null;
-        } else {
-          // try parse number (strip commas)
+      for (const prefix of prefixes) {
+        const info = prefixMap[prefix] || { inStockCol: null, usageCol: null };
+
+        const inStockCell = info.inStockJsCol !== null ? row[info.inStockJsCol] : undefined;
+        const usageCell = info.usageJsCol !== null ? row[info.usageJsCol] : undefined;
+
+        const parseCell = (cell) => {
+          if (cell === undefined || cell === null || String(cell).trim() === '') return null;
           const maybeNum = Number(String(cell).replace(/,/g, '').trim());
-          value = Number.isFinite(maybeNum) ? maybeNum : String(cell);
-        }
-        pharmacies[col.label] = value;
+          return Number.isFinite(maybeNum) ? maybeNum : String(cell);
+        };
+
+        const inStockValue = parseCell(inStockCell);
+        const usageValue = parseCell(usageCell);
+
+        // spreadsheetCol: prefer usage column (1-based), otherwise inStock column
+        const spreadsheetCol = (info.usageCol !== null ? info.usageCol : info.inStockCol) !== null
+          ? ((info.usageCol !== null ? info.usageCol : info.inStockCol) + 1)
+          : null;
+
+        pharmacies[prefix] = { spreadsheetCol, inStockValue, usageValue };
       }
 
-      results.push({ item, pharmacies });
+      results.push({ spreadsheetRow, item, pharmacies });
     }
 
     return results;

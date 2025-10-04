@@ -23,9 +23,9 @@ export default function StockCount() {
   // Initialize inventory items on component mount
   useEffect(() => {
     const loadFromSheet = async () => {
-      // Default fallback items
+        // Default fallback items (default reorder switch to checked)
       const fallback = [
-        //{ sheetRowId: 1, itemName: 'Aspirin 100mg', inStock: 250, stockCountColLetter: 'B' },
+        //{ sheetRowId: 1, itemName: 'Aspirin 100mg', inStock: 250, stockCountColLetter: 'B', reorder: true },
       ];
 
       try {
@@ -84,7 +84,8 @@ export default function StockCount() {
               const itemName = row[1] || '';
               const rawInStock = row[stockCountColIndex];
               const inStock = rawInStock === undefined || rawInStock === '' ? '' : Number(rawInStock) || 0;
-              results.push({ sheetRowId: r + 1, itemName, colLetter: stockCountColumnLetter, inStock, originalStock: inStock, reorder: false });
+              // Default the reorder switch to checked on load
+              results.push({ sheetRowId: r + 1, itemName, colLetter: stockCountColumnLetter, inStock: 0, originalStock: 0, reorder: true });
             }
         }
 
