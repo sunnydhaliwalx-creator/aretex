@@ -173,9 +173,12 @@ export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 
       // New layout: E=Urgent (col5 index4), F=Status (col6 index5), G=Comments (col7 index6)
       const urgent = (row[4] || '').toString().trim() === 'Y';
       const status = row[5] || '';
+      const comments = (row[6] || '').toString().trim();
+      const cost = row[7] || '';
+      const minSupplier = row[8] || '';
 
       // include 1-based spreadsheet row number so callers can update rows
-      results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status, urgent, spreadsheetRow: i + 1 });
+      results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status, urgent, cost, minSupplier, spreadsheetRow: i + 1 });
     }
 
     // Sort by date descending (newest first)

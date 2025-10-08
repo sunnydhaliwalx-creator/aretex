@@ -459,7 +459,7 @@ export default function Orders() {
         
         {/* Orders Table */}
         <div className="table-responsive">
-          <table className="table table-light table-striped table-bordered table-hover">
+          <table className="table table-sm table-light table-striped table-bordered table-hover">
             <thead className="table-light">
               <tr className="text-center small">
                 <th>Date</th>
