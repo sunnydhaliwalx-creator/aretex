@@ -27,7 +27,7 @@ export default function UsagePage() {
 					const spreadsheetId = session.spreadsheetId;
 					const groupPharmacyCodes = Array.isArray(session.groupPharmacyCodes) ? session.groupPharmacyCodes : [];
 
-					const data = await fetchStock(spreadsheetId, groupPharmacyCodes);
+					const data = await fetchStock(spreadsheetId, groupPharmacyCodes, false);
 					console.log('Usage data', data);
 					if (!mounted) return;
 					setRows(data || []);

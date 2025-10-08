@@ -19,13 +19,14 @@ async function findSessionForCredentials(username, password) {
       if (rowUsername === username && rowPassword === password) {
         const matchedGroupCode = (row[1] || '').toString().replace('TEST ', '').trim();
 
-        // collect all pharmacy codes for rows that share this groupCode
+        // collect all pharmacy names for rows that share this groupCode
         const groupSet = new Set();
         for (const r of data) {
           if (!r) continue;
           const rGroup = (r[1] || '').toString().replace('TEST ', '').trim();
           const rPharm = (r[2] || '').toString().replace('TEST ', '').trim();
-          if (rGroup && rPharm && rGroup === matchedGroupCode) groupSet.add(rPharm);
+          const rPharmName = (r[3] || '').toString().trim();
+          if (rGroup && rPharm && rGroup === matchedGroupCode) groupSet.add(rPharmName);
         }
 
         return {

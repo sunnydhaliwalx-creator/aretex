@@ -60,12 +60,12 @@ export default function Orders() {
       console.log('pharmacyCode',pharmacyCode,'rows',rows);
       
       // Fetch master items
-  const items = await fetchMasterInventoryItemsOptions();
+      const items = await fetchMasterInventoryItemsOptions();
       setMasterItems(items);
       
       if (Array.isArray(rows) && rows.length > 0) {
         // Map to orders shape used in this page; include spreadsheetRow so we can update
-        const mapped = rows.map(r => ({ date: r.date, item: r.inventoryItem, brand: '', qty: r.qty || 0, status: r.status || 'Pending', urgent: !!r.urgent, spreadsheetRow: r.spreadsheetRow }));
+        const mapped = rows.map(r => ({ date: r.date, item: r.inventoryItem, brand: '', qty: r.qty || 0, status: r.status || 'Pending', urgent: !!r.urgent, cost: r.cost || '', minSupplier: r.minSupplier || '', spreadsheetRow: r.spreadsheetRow }));
         setOrders(mapped);
         setFilteredOrders(mapped);
         return;
@@ -467,6 +467,8 @@ export default function Orders() {
                 <th>Qty</th>
                 <th>Urgent</th>
                 <th>Status</th>
+                <th>Cost</th>
+                <th>Min Supplier</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -502,6 +504,8 @@ export default function Orders() {
                       {order.status}
                     </span>
                   </td>
+                  <td className="text-center small">{order.cost}</td>
+                  <td className="text-center small">{order.minSupplier}</td>
                   <td>
                     {/* Mark Urgent moved to the Urgent column */}
 

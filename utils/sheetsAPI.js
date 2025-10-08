@@ -245,7 +245,7 @@ export function formatDateForSheets(d) {
     const hours = pad(date.getHours());
     const minutes = pad(date.getMinutes());
 
-    return `${month}/${day}/${year} ${hours}:${minutes}`;
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
   } catch (err) {
     console.warn('formatDateForSheets error', err);
     return '';
@@ -384,10 +384,10 @@ export async function updateOrder(order) {
  * @param {Array<string>} groupPharmacyCodes - optional array of pharmacy codes to include (matches prefix before ' - Usage')
  * @returns {Promise<Array<{item: string, pharmacies: Record<string, number|null|string>}>>}
  */
-export async function fetchStock(spreadsheetId, groupPharmacyCodes = []) {
+export async function fetchStock(spreadsheetId, groupPharmacyCodes = [], filterTender = true) {
   try {
     if (!spreadsheetId) return [];
-    const inStockSuffix = ' - In Stock';
+    const toOrderSuffix = ' - To Order';
     const usageSuffix = ' - Usage';
 
     const worksheetName = 'Stock';
@@ -401,7 +401,7 @@ export async function fetchStock(spreadsheetId, groupPharmacyCodes = []) {
     groupPharmacyCodes.forEach((code, idx, arr) => {
       if (code) arr[idx] = String(code).trim();
 
-      const lookupInStockHeader = `${code}${inStockSuffix}`;
+      const lookupInStockHeader = `${code}${toOrderSuffix}`;
       const lookupUsageHeader = `${code}${usageSuffix}`;
 
       prefixMap[code] = { inStockJsCol: headers.indexOf(lookupInStockHeader), usageJsCol: headers.indexOf(lookupUsageHeader) };
@@ -422,7 +422,7 @@ export async function fetchStock(spreadsheetId, groupPharmacyCodes = []) {
 
       // Column 3 is index 2
       const typeCell = row[2] !== undefined && row[2] !== null ? String(row[2]).trim() : '';
-      if (typeCell !== 'Tender') continue;
+      if (filterTender && typeCell !== 'Tender') continue;
 
       const item = row[1] !== undefined && row[1] !== null ? row[1] : '';
       const pharmacies = {};

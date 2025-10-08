@@ -13,10 +13,13 @@ export default function StockCount() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [showSavingModal, setShowSavingModal] = useState(false);
+  const [savedTemporary, setSavedTemporary] = useState(false); // true while showing "Saved Successfully"
+  const [forceEnable, setForceEnable] = useState(false); // when true, ignore hasUnsavedChanges for button disabling
   
   // Ref to track if component is mounted
   const isMounted = useRef(true);
   const autoSaveTimerRef = useRef(null);
+  const savedTimerRef = useRef(null);
 
   const stockWorksheetName = "Stock";
   
@@ -103,6 +106,9 @@ export default function StockCount() {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
       }
+      if (savedTimerRef.current) {
+        clearTimeout(savedTimerRef.current);
+      }
     };
   }, []);
   
@@ -138,6 +144,8 @@ export default function StockCount() {
         inStock: newValue === '' ? '' : parseInt(newValue, 10) || 0,
       };
       setInventoryItems(updated);
+      // User edited something; restore normal button behavior
+      setForceEnable(false);
       setHasUnsavedChanges(true);
       return;
     }
@@ -222,8 +230,19 @@ export default function StockCount() {
       setSaveMessage(isAutoSave ? 'Auto-saved successfully!' : 'Saved successfully!');
 
       if (!isAutoSave) {
-        setShowSuccessModal(true);
-        setTimeout(() => setShowSuccessModal(false), 2000);
+        // Instead of showing a modal, change the Save button text to "Saved Successfully"
+        // and disable it for 3 seconds, then revert and re-enable the button.
+        if (savedTimerRef.current) {
+          clearTimeout(savedTimerRef.current);
+        }
+        setSavedTemporary(true);
+        // ensure we don't force-enable until after the temporary saved state finishes
+        setForceEnable(false);
+        savedTimerRef.current = setTimeout(() => {
+          setSavedTemporary(false);
+          // allow the button to be enabled briefly after success regardless of unsaved state
+          setForceEnable(true);
+        }, 3000);
       }
     } catch (error) {
       console.error('Error saving inventory:', error);
@@ -288,45 +307,15 @@ export default function StockCount() {
       
       <div className="container-fluid mt-4">
         <div className="row mb-1">
-          <div className="col">
+          <div className="col lh-sm">
             <h2 className="mb-0">Inventory Stock Count</h2>
             <small className="text-light">
               If you spot any discrepancies with the usages displayed, please get in touch and we can update them.
             </small>
-            <small className="text-light">
-              Last saved: {formatLastSavedTime()}
-              {hasUnsavedChanges && (
-                <span className="badge bg-warning text-dark ms-2">
-                  <i className="bi bi-exclamation-triangle me-1"></i>
-                  Unsaved changes
-                </span>
-              )}
-            </small>
+            <br />
           </div>
         </div>
 
-        {/* Save Button Section */}
-        <div className="row mt-2 mb-3">
-          <div className="col-12 col-md-4 col-lg-12 ms-auto">
-            <button 
-              className="btn btn-primary w-100"
-              onClick={() => handleSave(false)}
-              disabled={isSaving || !hasUnsavedChanges}
-            >
-              {isSaving ? (
-                <>
-                  <span className="spinner-border spinner-border-sm me-2" role="status"></span>
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <i className="bi bi-save me-2"></i>
-                  Save All Changes
-                </>
-              )}
-            </button>
-          </div>
-        </div>
         
         {/* Inventory Items Grid */}
         <div className="row">
@@ -401,6 +390,49 @@ export default function StockCount() {
               <small>
                 <strong>Auto-save:</strong> Your changes will be automatically saved 60 seconds after you stop editing. 
                 You can also click "Save All Changes" to save immediately.
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Fixed footer with Save button */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(255,255,255,0.95)', borderTop: '1px solid #e9ecef', padding: '10px' }}>
+        <div className="container">
+          <div className="row align-items-center">
+            <div className="col-12 col-md-4 ms-auto">
+              <button 
+                className="btn btn-sm btn-primary w-100"
+                onClick={() => handleSave(false)}
+                disabled={isSaving || (savedTemporary ? true : (!hasUnsavedChanges && !forceEnable))}
+              >
+                {isSaving ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                    Saving...
+                  </>
+                ) : savedTemporary ? (
+                  'Saved Successfully'
+                ) : (
+                  <>
+                    <i className="bi bi-save me-2"></i>
+                    Save All Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="row my-0">
+            <div className="col-12 text-center" style={{fontSize: '80%'}}>
+              <small className="text-light">
+                Last saved: {formatLastSavedTime()}
+                {hasUnsavedChanges && (
+                  <span className="badge bg-warning text-dark ms-2">
+                    <i className="bi bi-exclamation-triangle me-1"></i>
+                    Unsaved changes
+                  </span>
+                )}
               </small>
             </div>
           </div>
