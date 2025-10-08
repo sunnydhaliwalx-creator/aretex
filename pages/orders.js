@@ -474,7 +474,7 @@ export default function Orders() {
             </thead>
             <tbody>
               {filteredOrders.map((order, index) => (
-                <tr key={index}>
+                <tr key={index} className="lh-sm">
                   <td className="text-center small">{order.date ? formatDateForSheets(order.date) : ''}</td>
                   <td>{order.item}{order.brand ? ` (${order.brand})` : ''}</td>
                   <td className="text-center">{order.qty}</td>

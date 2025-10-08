@@ -83,8 +83,7 @@ export default function UsagePage() {
 										const p = r.pharmacies && r.pharmacies[key] ? r.pharmacies[key] : { inStockValue: null, usageValue: null };
 										return (
 											<td className="text-center" key={key}>
-												<div style={{fontWeight:600}}>{p.inStockValue === null ? '' : p.inStockValue}</div>
-												<div className="small text-muted">{p.usageValue === null ? '' : p.usageValue}</div>
+												<div style={{fontWeight:600}}>{p.usageValue === null ? '' : p.usageValue}</div>
 											</td>
 										);
 									})}
