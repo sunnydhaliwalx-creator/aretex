@@ -321,7 +321,7 @@ export async function appendOrder(order) {
     const dateValue = formatDateForSheets(rawDate);
 
     const urgentFlag = order.urgent ? 'Y' : '';
-    const statusValue = order.status || 'Ordered';
+    const statusValue = order.status;
     const commentsValue = order.comments || '';
 
     const aToGValues = [[
