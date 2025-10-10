@@ -402,17 +402,22 @@ export default function Orders() {
         title="Mark Discrepancy"
         body={
           <div>
+            <div className="text-muted">You can say things like:</div>
+            <ul>
+              <li><strong>Wrong Qty Received:</strong> and enter the actual quantity received</li>
+              <li><strong>Wrong Item Received:</strong> and share actual item received</li>
+              <li><strong>Price Discrepancy:</strong> and enter received purchase price on the invoice</li>
+            </ul>
             <div className="mb-3">
               <label htmlFor="discrepancyNotes" className="form-label">Notes</label>
               <textarea id="discrepancyNotes" className="form-control" rows={4} value={discrepancyNotes} onChange={e => setDiscrepancyNotes(e.target.value)} />
             </div>
-            <div className="text-muted">These notes will be saved to the sheet's Comments column.</div>
           </div>
         }
         footer={
           <>
             <button type="button" className="btn btn-secondary" onClick={() => { setShowDiscrepancyModal(false); setDiscrepancyNotes(''); }}>Cancel</button>
-            <button type="button" className="btn btn-danger" onClick={() => handleSaveDiscrepancy()}>Save Notes</button>
+            <button type="button" className="btn btn-danger" onClick={() => handleSaveDiscrepancy()}>Save</button>
           </>
         }
         show={showDiscrepancyModal}
