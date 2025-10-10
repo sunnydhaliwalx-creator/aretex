@@ -56,10 +56,10 @@ export default function UsagePage() {
 	return (
 		<div className="container mt-4">
 			<Head>
-				<title>Aretex - Usage</title>
+				<title>Aretex - Monthly Usage</title>
 			</Head>
 
-			<h3 className="mb-3">Usage</h3>
+			<h3 className="mb-3">Monthly Usage</h3>
 
 			{loading && <div className="alert alert-info">Loading...</div>}
 			{error && <div className="alert alert-danger">{error}</div>}

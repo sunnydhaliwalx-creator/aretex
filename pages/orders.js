@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchFilteredOrders, fetchMasterInventoryItemsOptions, appendOrder, updateOrder, formatDateForSheets } from '../utils/sheetsAPI';
+import { fetchFilteredOrders, fetchMasterInventoryItemsOptions, appendOrder, updateOrder, formatDateForSheets, fetchStock } from '../utils/sheetsAPI';
 
 export default function Orders() {
   // State management
@@ -29,6 +29,10 @@ export default function Orders() {
   const [addQty, setAddQty] = useState('');
   const [addUrgent, setAddUrgent] = useState(false);
   
+  // Usage data state
+  const [usageData, setUsageData] = useState([]);
+  const [selectedItemUsage, setSelectedItemUsage] = useState('');
+  
   // Form state for editing orders (modal removed)
   const [editDate, setEditDate] = useState('');
   const [editItem, setEditItem] = useState('');
@@ -43,6 +47,7 @@ export default function Orders() {
       // Try fetching from Google Sheets; spreadsheet id and worksheet name provided by user request
       const spreadsheetId = '1R97ONLxo1h6fV_v3LgdArf0HHa_FcnxSwtbzdMc1prE';
       let pharmacyCode = 'CLI';
+      let pharmacyName = '';
       try {
         const r = await fetch('/api/session');
         if (r.ok) {
@@ -50,9 +55,18 @@ export default function Orders() {
           setSessionData(j || null); // store the full response JSON
           const s = j.session;
           if (s && s.pharmacyCode) pharmacyCode = s.pharmacyCode;
+          if (s && s.pharmacyName) pharmacyName = s.pharmacyName;
+
+          // Fetch usage data
+          if (s && s.spreadsheetId && s.groupPharmacyCodes) {
+            var usage = await fetchStock(s.spreadsheetId, [s.pharmacyName], false);             
+            setUsageData(usage || []);
+            console.log('Uage data', usage);
+          }
         }
       } catch (err) {
         // ignore and use default
+        console.log('err',err)
       }
       
       // Fetch client orders
@@ -131,6 +145,24 @@ export default function Orders() {
     const v = e.target.value;
     setAddItem(v);
     updateSuggestions(v);
+
+    const pharmacyName = sessionData?.session?.pharmacyName;
+    
+    // Update usage for selected item
+    if (v && usageData.length > 0 && pharmacyName) {
+      const matchingItem = usageData.find(item => 
+        item.item && item.item.toLowerCase() === v.toLowerCase()
+      );
+      
+      if (matchingItem && matchingItem.pharmacies && matchingItem.pharmacies[pharmacyName]) {
+        const usage = matchingItem.pharmacies[pharmacyName].usageValue;
+        setSelectedItemUsage(usage !== null && usage !== undefined ? usage : '');
+      } else {
+        setSelectedItemUsage('');
+      }
+    } else {
+      setSelectedItemUsage('');
+    }
   };
 
   // Reuse handlers for edit input by supplying setter functions
@@ -144,6 +176,20 @@ export default function Orders() {
   const chooseSuggestion = (sugg, target = 'add') => {
     if (target === 'add') {
       setAddItem(sugg.item);
+      
+      // Update usage when item is selected from suggestions
+      if (usageData.length > 0 && sessionData?.session?.pharmacyName) {
+        const matchingItem = usageData.find(item => 
+          item.item && item.item.toLowerCase() === sugg.item.toLowerCase()
+        );
+        
+        if (matchingItem && matchingItem.pharmacies && matchingItem.pharmacies[sessionData.session.pharmacyName]) {
+          const usage = matchingItem.pharmacies[sessionData.session.pharmacyName].usageValue;
+          setSelectedItemUsage(usage !== null && usage !== undefined ? usage : '');
+        } else {
+          setSelectedItemUsage('');
+        }
+      }
     } else if (target === 'edit') {
       setEditItem(sugg.item);
     }
@@ -281,6 +327,7 @@ export default function Orders() {
     setAddBrand('');
     setAddQty('');
     setAddUrgent(false);
+    setSelectedItemUsage('');
   };
   
   // Edit modal handlers removed; using Mark Urgent and Discrepancy flows instead
@@ -412,7 +459,7 @@ export default function Orders() {
                 )}
                 </div>
             </div>
-            <div className="col-12 col-sm-6 col-md-3">
+            <div className="col-12 col-sm-6 col-md-2">
                 <input 
                     type="text" 
                     className="form-control" 
@@ -420,6 +467,12 @@ export default function Orders() {
                     value={addBrand}
                     onChange={(e) => setAddBrand(e.target.value)}
                 />
+            </div>
+            <div className="col-12 col-sm-6 col-md-1 align-items-center text-center">
+              <div className="text-muted text-center">
+                <small className="my-0 py-0" style={{ fontSize: '60%' }}>Monthly Usage: </small>< br />
+                <strong>{selectedItemUsage}</strong>
+              </div>
             </div>
             <div className="col-12 col-sm-6 col-md-1">
                 <input 

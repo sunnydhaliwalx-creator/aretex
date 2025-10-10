@@ -346,7 +346,7 @@ export default function StockCount() {
                   <div className="card-body p-3">
                     <h6 className="card-title mb-1">{item.itemName}</h6>
                     <div className="mb-0">
-                      <div className="small text-muted">Current Usage: {item.usage}</div>
+                      <div className="small text-muted">Monthly Usage: {item.usage}</div>
 
                       
                       <div id="stockCount">
