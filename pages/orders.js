@@ -485,6 +485,7 @@ export default function Orders() {
                     className="form-control" 
                     placeholder="Qty" 
                     required
+                    min="1"
                     value={addQty}
                     onChange={(e) => setAddQty(e.target.value)}
                 />

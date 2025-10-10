@@ -199,7 +199,7 @@ export default function StockCount() {
       // Determine which items changed
       const changedItems = inventoryItems.filter(item => 
         item.originalStock !== item.inStock || 
-        (item.reorder && item.orderAmount && item.originalOrderQty !== item.specificOrderQty)
+        item.originalOrderQty !== item.specificOrderQty
       );
       console.log('Changed items to save:', changedItems);
 
@@ -226,12 +226,21 @@ export default function StockCount() {
             });
           }
           
-          // Only save specificOrderQty to toOrderColLetter if both reorder and orderAmount are enabled
-          if (item.reorder && item.orderAmount && item.originalOrderQty !== item.specificOrderQty) {
+          // Update toOrderColLetter based on reorder and orderAmount toggles
+          if (item.originalOrderQty !== item.specificOrderQty) {
+            let toOrderValue;
+            if (!item.reorder) {
+              toOrderValue = "DNO";
+            } else if (!item.orderAmount) {
+              toOrderValue = "";
+            } else {
+              toOrderValue = item.specificOrderQty === '' ? '' : item.specificOrderQty;
+            }
+            
             updates.push({
               spreadsheetRow: item.sheetRowId,
               spreadsheetCol: columnLetterToNumber(item.toOrderColLetter),
-              spreadsheetValue: item.specificOrderQty === '' ? '' : item.specificOrderQty
+              spreadsheetValue: toOrderValue
             });
           }
         }
@@ -246,7 +255,7 @@ export default function StockCount() {
       const updatedItems = inventoryItems.map(item => ({
         ...item,
         originalStock: item.inStock,
-        originalOrderQty: (item.reorder && item.orderAmount) ? item.specificOrderQty : item.originalOrderQty
+        originalOrderQty: item.specificOrderQty
       }));
       setInventoryItems(updatedItems);
 
@@ -430,7 +439,7 @@ export default function StockCount() {
                             id="specificOrderQtyInput"
                             type="number"
                             className="form-control text-center mt-2"
-                            min="0"
+                            min="1"
                             value={item.specificOrderQty}
                             onChange={(e) => handleOrderQtyChange(arrayIdx, item.sheetRowId, e.target.value)}
                             style={{ fontSize: '1.3rem', fontWeight: 'bold' }}
