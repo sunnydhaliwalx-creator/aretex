@@ -95,9 +95,6 @@ export default function StockCount() {
         let inStockColLetter = inStockColIndex >= 0 ? getColumnLetterFromIndex(inStockColIndex) : '';
         let toOrderColLetter = toOrderColIndex >= 0 ? getColumnLetterFromIndex(toOrderColIndex) : '';
         let usageColLetter = usageColIndex >= 0 ? getColumnLetterFromIndex(usageColIndex) : '';
-        console.log({inStockColIndex, toOrderColIndex, usageColIndex});
-
-
 
         if (stockCountColumnLetter === "") {
           // Not found, fallback
@@ -119,11 +116,12 @@ export default function StockCount() {
               const toOrder = rawToOrder === undefined || rawToOrder === '' ? '' : Number(rawToOrder) || 0;
               const usage = rawUsage === undefined || rawUsage === '' ? 0 : Number(rawUsage) || 0;
               // Default the reorder switch to checked on load, orderAmount switch to off
+              // Set initial stock count to usage value
               results.push({ 
                 sheetRowId: r + 1, 
                 itemName, 
-                inStock: 0, 
-                originalStock: 0, 
+                inStock: inStock, 
+                originalStock: inStock, 
                 specificOrderQty: 0,
                 originalOrderQty: 0,
                 reorder: true, 
