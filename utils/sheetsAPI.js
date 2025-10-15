@@ -127,10 +127,23 @@ export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 
     // Read entire sheet (client helper will call /api/googleSheets)
     const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
 
-    if (!Array.isArray(data) || data.length === 0) return [];
+    if (!Array.isArray(data) || data.length === 0) return { orders: [], columnMapping: {} };
 
-    // Assume first row may be headers; detect if first row contains non-date in col 1
-    const rows = data.slice();
+    // Get headers from row 1 (index 0) and create column mapping
+    const headers = data.length > 0 ? data[0] : [];
+    const columnMapping = {
+      date: findColumnByHeader(headers, 'Date'),
+      pharmacy: findColumnByHeader(headers, 'Pharmacy'),
+      item: findColumnByHeader(headers, 'Item'),
+      qty: findColumnByHeader(headers, 'Qty'),
+      urgent: findColumnByHeader(headers, 'Urgent?'),
+      status: findColumnByHeader(headers, 'Status'),
+      comments: findColumnByHeader(headers, 'Comments'),
+      cost: findColumnByHeader(headers, 'Cost'),
+      minSupplier: findColumnByHeader(headers, 'Min Supplier')
+    };
+
+    const rows = data.slice(1); // Skip header row
 
     // Parse date threshold: 12 months ago
     const now = new Date();
@@ -141,9 +154,9 @@ export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i] || [];
 
-      // Column mapping (1-based): Date=col1, Pharmacy=col2, Inventory Item=col3, Qty=col4, Status=col7
-      const rawDate = row[0];
-      const rowPharmacy = (row[1] || '').toString().trim();
+      // Use column mapping to get values
+      const rawDate = columnMapping.date >= 0 ? row[columnMapping.date] : null;
+      const rowPharmacy = columnMapping.pharmacy >= 0 ? (row[columnMapping.pharmacy] || '').toString().trim() : '';
 
       // Skip rows where pharmacy doesn't match
       if (rowPharmacy !== pharmacy) continue;
@@ -168,26 +181,25 @@ export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 
       // Keep only rows within last 12 months (>= twelveMonthsAgo)
       if (parsedDate < twelveMonthsAgo) continue;
 
-      const inventoryItem = row[2] || '';
-      const qty = row[3] !== undefined && row[3] !== '' ? Number(row[3]) : null;
-      // New layout: E=Urgent (col5 index4), F=Status (col6 index5), G=Comments (col7 index6)
-      const urgent = (row[4] || '').toString().trim() === 'Y';
-      const status = row[5] || '';
-      const comments = (row[6] || '').toString().trim();
-      const cost = row[7] || '';
-      const minSupplier = row[8] || '';
+      const inventoryItem = columnMapping.item >= 0 ? row[columnMapping.item] || '' : '';
+      const qty = columnMapping.qty >= 0 && row[columnMapping.qty] !== undefined && row[columnMapping.qty] !== '' ? Number(row[columnMapping.qty]) : null;
+      const urgent = columnMapping.urgent >= 0 ? (row[columnMapping.urgent] || '').toString().trim() === 'Y' : false;
+      const status = columnMapping.status >= 0 ? row[columnMapping.status] || '' : '';
+      const comments = columnMapping.comments >= 0 ? (row[columnMapping.comments] || '').toString().trim() : '';
+      const cost = columnMapping.cost >= 0 ? row[columnMapping.cost] || '' : '';
+      const minSupplier = columnMapping.minSupplier >= 0 ? row[columnMapping.minSupplier] || '' : '';
 
-      // include 1-based spreadsheet row number so callers can update rows
-      results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status, urgent, cost, minSupplier, spreadsheetRow: i + 1 });
+      // include 1-based spreadsheet row number so callers can update rows (add 2 to account for header + 0-based index)
+      results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status, urgent, cost, minSupplier, spreadsheetRow: i + 2 });
     }
 
     // Sort by date descending (newest first)
     results.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    return results;
+    return { orders: results, columnMapping };
   } catch (error) {
     console.error('fetchFilteredOrders error:', error);
-    return [];
+    return { orders: [], columnMapping: {} };
   }
 }
 
@@ -301,42 +313,118 @@ export async function fetchMasterInventoryItemsOptions(
   }
 }
 
+// Helper function to find column index by header name
+function findColumnByHeader(headers, headerName) {
+  if (!Array.isArray(headers)) return -1;
+  return headers.findIndex(header => 
+    header && header.toString().trim().toLowerCase() === headerName.toLowerCase()
+  );
+}
 
 // Append a single order row to the Current worksheet without overwriting formula columns
-export async function appendOrder(order) {
+export async function appendOrder(order, columnMapping = null) {
   try {
     const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID
     const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME;
 
-    // Read existing sheet to determine next row
+    // If no column mapping provided, read sheet to get it
+    let ordersColumnMapping = columnMapping;
+    if (!ordersColumnMapping) {
+      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
+      const headers = data.length > 0 ? data[0] : [];
+      ordersColumnMapping = {
+        date: findColumnByHeader(headers, 'Date'),
+        pharmacy: findColumnByHeader(headers, 'Pharmacy'),
+        item: findColumnByHeader(headers, 'Item'),
+        qty: findColumnByHeader(headers, 'Qty'),
+        urgent: findColumnByHeader(headers, 'Urgent?'),
+        status: findColumnByHeader(headers, 'Status'),
+        comments: findColumnByHeader(headers, 'Comments'),
+        cost: findColumnByHeader(headers, 'Cost'),
+        minSupplier: findColumnByHeader(headers, 'Min Supplier')
+      };
+    }
+
+    // Read sheet to determine next row (we still need this for findFirstEmptyRow)
     const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
 
-    // Use helper to find the first empty row where columns A-D are blank
-    const nextRow = findFirstEmptyRow(data, [1,2,3,4]);
+    // Use helper to find the first empty row where key columns are blank
+    const keyCols = [ordersColumnMapping.date, ordersColumnMapping.pharmacy, ordersColumnMapping.item, ordersColumnMapping.qty]
+      .filter(col => col >= 0)
+      .map(col => col + 1); // Convert to 1-based for findFirstEmptyRow
+    
+    const nextRow = findFirstEmptyRow(data, keyCols.length > 0 ? keyCols : [1,2,3,4]);
 
+    // Prepare values for each column
     const itemValue = order.brand ? `${order.item} (${order.brand})` : (order.item || '');
-
-    // Write columns A:G (date, pharmacyCode, item, qty, urgent(E), status(F), comments(G))
     const rawDate = order.date !== undefined && order.date !== null && order.date !== '' ? order.date : new Date();
     const dateValue = formatDateForSheets(rawDate);
-
     const urgentFlag = order.urgent ? 'Y' : '';
-    const statusValue = order.status;
-    const commentsValue = order.comments || '';
 
-    const aToGValues = [[
-      dateValue,
-      order.pharmacyCode || '',
-      itemValue,
-      order.qty === undefined ? '' : order.qty,
-      urgentFlag,
-      statusValue,
-      commentsValue
-    ]];
+    // Build updates array for only the columns that exist
+    const updates = [];
+    
+    if (ordersColumnMapping.date >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: ordersColumnMapping.date + 1, // Convert to 1-based
+        spreadsheetValue: dateValue
+      });
+    }
+    
+    if (ordersColumnMapping.pharmacy >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: ordersColumnMapping.pharmacy + 1,
+        spreadsheetValue: order.pharmacyCode || ''
+      });
+    }
+    
+    if (ordersColumnMapping.item >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: ordersColumnMapping.item + 1,
+        spreadsheetValue: itemValue
+      });
+    }
+    
+    if (ordersColumnMapping.qty >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: ordersColumnMapping.qty + 1,
+        spreadsheetValue: order.qty === undefined ? '' : order.qty
+      });
+    }
+    
+    if (ordersColumnMapping.urgent >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: ordersColumnMapping.urgent + 1,
+        spreadsheetValue: urgentFlag
+      });
+    }
+    
+    if (ordersColumnMapping.status >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: ordersColumnMapping.status + 1,
+        spreadsheetValue: order.status || ''
+      });
+    }
+    
+    if (ordersColumnMapping.comments >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: ordersColumnMapping.comments + 1,
+        spreadsheetValue: order.comments || ''
+      });
+    }
 
-    const rangeAtoG = `A${nextRow}:G${nextRow}`;
-    console.log('appendOrder rangeAtoG', rangeAtoG, 'values:', aToGValues);
-    await sheetsAPI.updateRange(spreadsheetId, worksheetName, rangeAtoG, aToGValues);
+    console.log('appendOrder updates:', updates);
+    
+    if (updates.length > 0) {
+      await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
+    }
 
     return { success: true, row: nextRow };
   } catch (error) {
@@ -345,12 +433,9 @@ export async function appendOrder(order) {
   }
 }
 
-
-
-
-// Updates an order. It should not update the date column (col 1)
-// Expects an order object that includes spreadsheetRow (1-based) and any of: pharmacyName, item, qty, status, urgent
-export async function updateOrder(order) {
+// Updates an order. It should not update the date column
+// Expects an order object that includes spreadsheetRow (1-based) and any of: pharmacyName, item, qty, status, urgent, comments
+export async function updateOrder(order, columnMapping = null) {
   const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID;
   const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME || 'Current';
 
@@ -359,16 +444,89 @@ export async function updateOrder(order) {
     const row = order.spreadsheetRow;
     if (!row) throw new Error('order.spreadsheetRow is required to update order');
 
+    // If no column mapping provided, read sheet to get it
+    let ordersColumnMapping = columnMapping;
+    if (!ordersColumnMapping) {
+      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
+      const headers = data.length > 0 ? data[0] : [];
+      ordersColumnMapping = {
+        pharmacy: findColumnByHeader(headers, 'Pharmacy'),
+        item: findColumnByHeader(headers, 'Item'),
+        qty: findColumnByHeader(headers, 'Qty'),
+        urgent: findColumnByHeader(headers, 'Urgent?'),
+        status: findColumnByHeader(headers, 'Status'),
+        comments: findColumnByHeader(headers, 'Comments'),
+        cost: findColumnByHeader(headers, 'Cost'),
+        minSupplier: findColumnByHeader(headers, 'Min Supplier')
+      };
+    }
+
     // Build updates array: { spreadsheetRow, spreadsheetCol, spreadsheetValue }
     const updates = [];
 
-  // New mapping: col2=pharmacyName, col3=item, col4=qty, col5=urgent, col6=status, col7=comments
-  if (order.pharmacyName !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 2, spreadsheetValue: order.pharmacyName });
-  if (order.item !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 3, spreadsheetValue: order.item });
-  if (order.qty !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 4, spreadsheetValue: order.qty });
-  if (order.urgent !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 5, spreadsheetValue: order.urgent ? 'Y' : '' });
-  if (order.status !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 6, spreadsheetValue: order.status });
-  if (order.comments !== undefined) updates.push({ spreadsheetRow: row, spreadsheetCol: 7, spreadsheetValue: order.comments });
+    if (order.pharmacyName !== undefined && ordersColumnMapping.pharmacy >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: ordersColumnMapping.pharmacy + 1, 
+        spreadsheetValue: order.pharmacyName 
+      });
+    }
+    
+    if (order.item !== undefined && ordersColumnMapping.item >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: ordersColumnMapping.item + 1, 
+        spreadsheetValue: order.item 
+      });
+    }
+    
+    if (order.qty !== undefined && ordersColumnMapping.qty >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: ordersColumnMapping.qty + 1, 
+        spreadsheetValue: order.qty 
+      });
+    }
+    
+    if (order.urgent !== undefined && ordersColumnMapping.urgent >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: ordersColumnMapping.urgent + 1, 
+        spreadsheetValue: order.urgent ? 'Y' : '' 
+      });
+    }
+    
+    if (order.status !== undefined && ordersColumnMapping.status >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: ordersColumnMapping.status + 1, 
+        spreadsheetValue: order.status 
+      });
+    }
+    
+    if (order.comments !== undefined && ordersColumnMapping.comments >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: ordersColumnMapping.comments + 1, 
+        spreadsheetValue: order.comments 
+      });
+    }
+
+    if (order.cost !== undefined && ordersColumnMapping.cost >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: ordersColumnMapping.cost + 1, 
+        spreadsheetValue: order.cost 
+      });
+    }
+
+    if (order.minSupplier !== undefined && ordersColumnMapping.minSupplier >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: ordersColumnMapping.minSupplier + 1, 
+        spreadsheetValue: order.minSupplier 
+      });
+    }
 
     if (updates.length === 0) return { success: true, message: 'Nothing to update' };
 

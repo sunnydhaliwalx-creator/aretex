@@ -32,6 +32,7 @@ export default function Orders() {
   // Usage data state
   const [usageData, setUsageData] = useState([]);
   const [selectedItemUsage, setSelectedItemUsage] = useState('');
+  const [ordersColumnMapping, setOrdersColumnMapping] = useState({});
   
   // Form state for editing orders (modal removed)
   const [editDate, setEditDate] = useState('');
@@ -70,8 +71,9 @@ export default function Orders() {
       }
       
       // Fetch client orders
-      const rows = await fetchFilteredOrders('Current', pharmacyCode);
+      const { orders: rows, columnMapping } = await fetchFilteredOrders('Current', pharmacyCode);
       console.log('pharmacyCode',pharmacyCode,'rows',rows);
+      setOrdersColumnMapping(columnMapping);
       
       // Fetch master items
       const items = await fetchMasterInventoryItemsOptions();
@@ -256,7 +258,7 @@ export default function Orders() {
     try {
       const status = "Received";
       const orderToUpdate = { ...orders[index], status: status };
-      const res = await updateOrder(orderToUpdate);
+      const res = await updateOrder(orderToUpdate, ordersColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
 
       const updatedOrders = [...orders];
@@ -300,7 +302,7 @@ export default function Orders() {
     console.log('sessionData', sessionData);
 
     try {
-      const res = await appendOrder(orderToAppend);
+      const res = await appendOrder(orderToAppend, ordersColumnMapping);
       if (res && res.success) {
         // capture sheet row returned by appendOrder
         orderToAppend.spreadsheetRow = res.row || undefined;
@@ -335,7 +337,7 @@ export default function Orders() {
   const handleMarkUrgent = async (order, index) => {
     try {
       const orderToUpdate = { ...order, urgent: true };
-      const res = await updateOrder(orderToUpdate);
+      const res = await updateOrder(orderToUpdate, ordersColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
       const updated = [...orders];
       updated[index] = { ...updated[index], urgent: true };
@@ -361,7 +363,7 @@ export default function Orders() {
     try {
       const targetOrder = orders[currentEditIndex] || {};
       const orderToUpdate = { ...targetOrder, status: 'Discrepancy', comments: discrepancyNotes };
-      const res = await updateOrder(orderToUpdate);
+      const res = await updateOrder(orderToUpdate, ordersColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
       const updated = [...orders];
       updated[currentEditIndex] = { ...updated[currentEditIndex], status: 'Discrepancy' };
@@ -375,6 +377,41 @@ export default function Orders() {
       setDiscrepancyNotes('');
       setCurrentEditIndex(null);
     }
+  };
+
+  // CSV Download function
+  const downloadCSV = () => {
+    // Get headers from the table DOM, excluding the last column (Actions)
+    const table = document.querySelector('.table');
+    const headerRow = table.querySelector('thead tr');
+    const headerCells = Array.from(headerRow.querySelectorAll('th'));
+    const headers = headerCells.slice(0, -1).map(th => th.textContent.trim()); // Exclude last column (Actions)
+    
+    const csvData = filteredOrders.map(order => [
+      order.date ? formatDateForSheets(order.date) : '',
+      `${order.item}${order.brand ? ` (${order.brand})` : ''}`,
+      order.qty || '',
+      order.urgent ? 'Yes' : 'No',
+      order.status || '',
+      order.cost || '',
+      order.minSupplier || ''
+    ]);
+
+    // Add headers as first row
+    const csvContent = [headers, ...csvData]
+      .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `orders-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
   
   return (
@@ -504,6 +541,17 @@ export default function Orders() {
 
           </div>
         </form>
+        
+        {/* Download CSV and Filter Section */}
+        <div className="d-flex justify-content-end align-items-end mb-1">
+          <button 
+            className="btn btn-sm btn-outline-light small py-0 px-1"
+            onClick={downloadCSV}
+          >
+            <i className="bi bi-download me-1"></i>
+            Download CSV
+          </button>
+        </div>
         
         {/* Filter Input */}
         <div className="mb-1">
