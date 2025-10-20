@@ -107,10 +107,19 @@ export default function Navbar() {
                   <Link href="/orders" className="nav-link">Orders</Link>
                 </li>
                 <li className="nav-item">
+                  <Link href="/monthly_orders" className="nav-link">Monthly Orders</Link>
+                </li>
+                <li className="nav-item">
                   <Link href="/usage" className="nav-link">Usage</Link>
                 </li>
                 <li className="nav-item">
                   <Link href="/stock_count" className="nav-link">Stock Count</Link>
+                </li>
+                <li className="nav-item">
+                  <Link href="/excess_stock" className="nav-link">Excess Stock</Link>
+                </li>
+                <li className="nav-item">
+                  <Link href="https://docs.google.com/spreadsheets/d/1Uk7pLXIRGM5OhZIOt-AcNxrK5Qg_kIKsJLfOvxG0fvs/edit?gid=770945102#gid=770945102" className="nav-link" target="_blank">Drug Tariff</Link>
                 </li>
                 <li className="nav-item">
                   <button type="button" onClick={handleLogout} className="btn btn-link nav-link" style={{textDecoration: 'none'}}>

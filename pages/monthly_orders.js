@@ -1,0 +1,368 @@
+import Head from 'next/head';
+import { useState, useEffect } from 'react';
+import Modal from '../components/Modal';
+import { sheetsAPI, formatDateForSheets } from '../utils/sheetsAPI';
+
+// Helper function to find column index by header name
+function findColumnByHeader(headers, headerName) {
+  if (!Array.isArray(headers)) return -1;
+  return headers.findIndex(header => 
+    header && header.toString().trim().toLowerCase() === headerName.toLowerCase()
+  );
+}
+
+export default function MonthlyOrders() {
+  // State management
+  const [orders, setOrders] = useState([]);
+  const [filteredOrders, setFilteredOrders] = useState([]);
+  const [filterInput, setFilterInput] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [sessionData, setSessionData] = useState(null);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorModalMessage, setErrorModalMessage] = useState('');
+  const [showDiscrepancyModal, setShowDiscrepancyModal] = useState(false);
+  const [discrepancyNotes, setDiscrepancyNotes] = useState('');
+  const [currentEditIndex, setCurrentEditIndex] = useState(null);
+
+  // Initialize orders data on component mount
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        // Get session data
+        const sessRes = await fetch('/api/session');
+        if (!sessRes.ok) throw new Error('Unable to load session');
+        const sessJson = await sessRes.json();
+        const session = sessJson.session;
+        if (!session || !session.spreadsheetId || !session.pharmacyName) {
+          throw new Error('No session, spreadsheetId, or pharmacyName available');
+        }
+
+        setSessionData(sessJson);
+        const { spreadsheetId, pharmacyName } = session;
+
+        // Read Master worksheet
+        const data = await sheetsAPI.readSheet(spreadsheetId, 'Master');
+        if (!Array.isArray(data) || data.length < 2) {
+          throw new Error('No data found in Master worksheet');
+        }
+
+        // Get headers from first row
+        const headers = data[0] || [];
+        const statusColIndex = findColumnByHeader(headers, 'Status');
+        const itemColIndex = findColumnByHeader(headers, 'Item');
+        const ordersLogColIndex = findColumnByHeader(headers, 'Orders Log');
+
+        if (statusColIndex === -1 || itemColIndex === -1 || ordersLogColIndex === -1) {
+          throw new Error('Required columns not found: Status, Item, or Orders Log');
+        }
+
+        const results = [];
+
+        // Process data rows (skip header row)
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i] || [];
+          const status = row[statusColIndex];
+          const item = row[itemColIndex];
+          const ordersLogRaw = row[ordersLogColIndex];
+
+          // Only process rows with Status = "Ordered"
+          if (status !== 'Ordered') continue;
+          if (!item || !ordersLogRaw) continue;
+
+          try {
+            // Parse the JSON from Orders Log
+            const ordersLog = JSON.parse(ordersLogRaw);
+            
+            // Check if our pharmacy exists in the JSON
+            if (ordersLog[pharmacyName]) {
+              const pharmacyOrders = ordersLog[pharmacyName];
+              
+              // Add each order for this pharmacy to results
+              pharmacyOrders.forEach((order, orderIndex) => {
+                // Parse the date string to Date object for consistent formatting
+                let parsedDate = null;
+                if (order.Date) {
+                  // Try to parse the date string
+                  parsedDate = new Date(order.Date);
+                  if (isNaN(parsedDate)) {
+                    // If parsing fails, use the original string
+                    parsedDate = order.Date;
+                  }
+                }
+
+                results.push({
+                  date: parsedDate, // Store as Date object or string
+                  item: item,
+                  ordered: order.Ordered || 0,
+                  price: order.Price || 0,
+                  supplier: order.Supplier || '',
+                  status: 'Ordered', // Default status since we filtered by "Ordered"
+                  spreadsheetRow: i + 1, // 1-based row number
+                  orderIndex: orderIndex // Index within the pharmacy's orders array
+                });
+              });
+            }
+          } catch (parseError) {
+            console.warn(`Failed to parse Orders Log for item ${item}:`, parseError);
+          }
+        }
+
+        // Sort by date descending (newest first)
+        results.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        setOrders(results);
+        setFilteredOrders(results);
+      } catch (err) {
+        console.error('MonthlyOrders load error:', err);
+        setError(err.message || 'Failed to load monthly orders data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, []);
+
+  // Simple fuzzy scoring for filtering
+  const scoreItem = (query, target) => {
+    if (!query) return 0;
+    const q = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const t = target.toLowerCase();
+
+    let score = 0;
+    for (const token of q) {
+      if (t.includes(token)) score += 10;
+      if (t.startsWith(token)) score += 5;
+    }
+
+    const joined = q.join(' ');
+    if (joined && t.includes(joined)) score += 15;
+    score -= Math.max(0, (t.length - joined.length) / 50);
+
+    return score;
+  };
+
+  // Filter orders when filter input changes
+  useEffect(() => {
+    if (!filterInput || !filterInput.trim()) {
+      setFilteredOrders(orders);
+      return;
+    }
+
+    const q = filterInput.trim();
+    const scored = orders.map((order, i) => {
+      const target = `${order.item || ''} ${order.supplier || ''} ${order.date || ''} ${order.ordered || ''}`;
+      return { order, score: scoreItem(q, target), index: i };
+    });
+
+    const top = scored
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(s => s.order);
+
+    setFilteredOrders(top);
+  }, [filterInput, orders]);
+
+  const handleFilterChange = (e) => {
+    setFilterInput(e.target.value);
+  };
+
+  const handleMarkReceived = async (order, index) => {
+    // TODO: Implement mark received logic
+    // This would need to update the JSON in the Orders Log column
+    console.log('Mark received:', order);
+    alert('Mark Received functionality needs to be implemented');
+  };
+
+  const handleMarkDiscrepancy = (index) => {
+    setCurrentEditIndex(index);
+    setShowDiscrepancyModal(true);
+  };
+
+  const handleSaveDiscrepancy = async () => {
+    if (currentEditIndex === null) return setShowDiscrepancyModal(false);
+    
+    try {
+      // TODO: Implement discrepancy logic
+      // This would need to update the JSON in the Orders Log column
+      console.log('Mark discrepancy:', filteredOrders[currentEditIndex], 'Notes:', discrepancyNotes);
+      alert('Mark Discrepancy functionality needs to be implemented');
+    } catch (err) {
+      console.error('discrepancy save error', err);
+      setErrorModalMessage(err.message || 'Failed to save discrepancy');
+      setShowErrorModal(true);
+    } finally {
+      setShowDiscrepancyModal(false);
+      setDiscrepancyNotes('');
+      setCurrentEditIndex(null);
+    }
+  };
+
+  // CSV Download function
+  const downloadCSV = () => {
+    const table = document.querySelector('.table');
+    const headerRow = table.querySelector('thead tr');
+    const headerCells = Array.from(headerRow.querySelectorAll('th'));
+    const headers = headerCells.slice(0, -1).map(th => th.textContent.trim()); // Exclude Actions column
+    
+    const csvData = filteredOrders.map(order => [
+      order.date ? formatDateForSheets(order.date) : '',
+      order.item || '',
+      order.ordered || '',
+      order.price || '',
+      order.supplier || ''
+    ]);
+
+    const csvContent = [headers, ...csvData]
+      .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `monthly-orders-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <>
+      <Head>
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <title>Aretex - Monthly Orders</title>
+      </Head>
+      
+      {/* Error Modal */}
+      <Modal
+        id="errorModal"
+        title="Error"
+        body={<div className="text-center"><p>{errorModalMessage}</p></div>}
+        show={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        useReactState={true}
+      />
+      
+      {/* Discrepancy Modal */}
+      <Modal
+        id="discrepancyModal"
+        title="Mark Discrepancy"
+        body={
+          <div>
+            <div className="text-muted">You can say things like:</div>
+            <ul>
+              <li><strong>Wrong Qty Received:</strong> and enter the actual quantity received</li>
+              <li><strong>Wrong Item Received:</strong> and share actual item received</li>
+              <li><strong>Price Discrepancy:</strong> and enter received purchase price on the invoice</li>
+            </ul>
+            <div className="mb-3">
+              <label htmlFor="discrepancyNotes" className="form-label">Notes</label>
+              <textarea 
+                id="discrepancyNotes" 
+                className="form-control" 
+                rows={4} 
+                value={discrepancyNotes} 
+                onChange={e => setDiscrepancyNotes(e.target.value)} 
+              />
+            </div>
+          </div>
+        }
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => { setShowDiscrepancyModal(false); setDiscrepancyNotes(''); }}>Cancel</button>
+            <button type="button" className="btn btn-danger" onClick={() => handleSaveDiscrepancy()}>Save</button>
+          </>
+        }
+        show={showDiscrepancyModal}
+        onClose={() => { setShowDiscrepancyModal(false); setDiscrepancyNotes(''); setCurrentEditIndex(null); }}
+        useReactState={true}
+      />
+      
+      <div className="container mt-5">
+        <h2 className="mb-4">Monthly Orders</h2>
+        
+        {loading && <div className="alert alert-info">Loading...</div>}
+        {error && <div className="alert alert-danger">{error}</div>}
+        
+        {!loading && !error && (
+          <>
+            {/* Download CSV and Filter Section */}
+            <div className="d-flex justify-content-end align-items-end mb-1">
+              <button 
+                className="btn btn-sm btn-outline-light small py-0 px-1"
+                onClick={downloadCSV}
+              >
+                <i className="bi bi-download me-1"></i>
+                Download CSV
+              </button>
+            </div>
+            
+            {/* Filter Input */}
+            <div className="mb-1">
+              <input 
+                type="text" 
+                className="form-control" 
+                placeholder="Filter orders..."
+                value={filterInput}
+                onChange={handleFilterChange}
+              />
+            </div>
+            
+            {/* Orders Table */}
+            <div className="table-responsive">
+              <table className="table table-sm table-light table-striped table-bordered table-hover">
+                <thead className="table-light">
+                  <tr className="text-center small">
+                    <th>Date</th>
+                    <th>Item</th>
+                    <th>Ordered</th>
+                    <th>Price</th>
+                    <th>Supplier</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOrders.map((order, index) => (
+                    <tr key={index} className="lh-sm">
+                      <td className="text-center small">{order.date ? formatDateForSheets(order.date) : ''}</td>
+                      <td>{order.item}</td>
+                      <td className="text-center">{order.ordered}</td>
+                      <td className="text-center">£{Number(order.price).toFixed(2)}</td>
+                      <td className="text-center small">{order.supplier}</td>
+                      <td>
+                        <button
+                          className="btn btn-sm btn-outline-success small py-0 px-2 me-1"
+                          onClick={() => handleMarkReceived(order, index)}
+                        >
+                          Mark Received
+                        </button>
+                        <button
+                          className="btn btn-sm btn-outline-danger small py-0 px-2"
+                          onClick={() => handleMarkDiscrepancy(index)}
+                        >
+                          Mark Discrepancy
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              
+              {filteredOrders.length === 0 && (
+                <div className="text-center py-4 text-muted">
+                  No orders found for your pharmacy
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}

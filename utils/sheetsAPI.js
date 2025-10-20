@@ -620,3 +620,225 @@ export async function fetchStock(spreadsheetId, groupPharmacyCodes = [], filterT
     return [];
   }
 }
+
+// Fetch excess stock items
+export async function fetchExcessStock() {
+  try {
+    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
+    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_WORKSHEET_NAME;
+    
+    if (!spreadsheetId || !worksheetName) {
+      console.warn('Missing excess stock spreadsheet configuration');
+      return { items: [], columnMapping: {} };
+    }
+
+    // Read entire sheet
+    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
+    if (!Array.isArray(data) || data.length === 0) return { items: [], columnMapping: {} };
+
+    // Get headers from row 1 (index 0) and create column mapping
+    const headers = data.length > 0 ? data[0] : [];
+    const columnMapping = {
+      dateAdded: findColumnByHeader(headers, 'Date Added'),
+      pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
+      item: findColumnByHeader(headers, 'Item'),
+      qty: findColumnByHeader(headers, 'Qty'),
+      expirationDate: findColumnByHeader(headers, 'Expiration Date')
+    };
+
+    const rows = data.slice(1); // Skip header row
+    const results = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || [];
+
+      const dateAdded = columnMapping.dateAdded >= 0 ? row[columnMapping.dateAdded] || '' : '';
+      const pharmacyName = columnMapping.pharmacyName >= 0 ? row[columnMapping.pharmacyName] || '' : '';
+      const item = columnMapping.item >= 0 ? row[columnMapping.item] || '' : '';
+      const qty = columnMapping.qty >= 0 ? row[columnMapping.qty] || '' : '';
+      const expirationDate = columnMapping.expirationDate >= 0 ? row[columnMapping.expirationDate] || '' : '';
+
+      // Skip empty rows
+      if (!item) continue;
+
+      results.push({
+        dateAdded,
+        pharmacyName,
+        item,
+        qty,
+        expirationDate,
+        spreadsheetRow: i + 2 // Add 2 to account for header row + 0-based index
+      });
+    }
+
+    // Sort by date added descending (newest first)
+    results.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+
+    return { items: results, columnMapping };
+  } catch (error) {
+    console.error('fetchExcessStock error:', error);
+    return { items: [], columnMapping: {} };
+  }
+}
+
+// Append a single excess stock item
+export async function appendExcessStock(excessItem, columnMapping = null) {
+  try {
+    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
+    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_WORKSHEET_NAME;
+
+    if (!spreadsheetId || !worksheetName) {
+      throw new Error('Missing excess stock spreadsheet configuration');
+    }
+
+    // If no column mapping provided, read sheet to get it
+    let excessColumnMapping = columnMapping;
+    if (!excessColumnMapping) {
+      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
+      const headers = data.length > 0 ? data[0] : [];
+      excessColumnMapping = {
+        dateAdded: findColumnByHeader(headers, 'Date Added'),
+        pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
+        item: findColumnByHeader(headers, 'Item'),
+        qty: findColumnByHeader(headers, 'Qty'),
+        expirationDate: findColumnByHeader(headers, 'Expiration Date')
+      };
+    }
+
+    // Read sheet to determine next row
+    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
+
+    // Use helper to find the first empty row where key columns are blank
+    const keyCols = [excessColumnMapping.dateAdded, excessColumnMapping.pharmacyName, excessColumnMapping.item]
+      .filter(col => col >= 0)
+      .map(col => col + 1); // Convert to 1-based for findFirstEmptyRow
+    
+    const nextRow = findFirstEmptyRow(data, keyCols.length > 0 ? keyCols : [1,2,3]);
+
+    // Prepare values for each column
+    const rawDate = excessItem.dateAdded !== undefined && excessItem.dateAdded !== null && excessItem.dateAdded !== '' ? excessItem.dateAdded : new Date();
+    const dateValue = formatDateForSheets(rawDate);
+
+    // Build updates array for only the columns that exist
+    const updates = [];
+    
+    if (excessColumnMapping.dateAdded >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: excessColumnMapping.dateAdded + 1, // Convert to 1-based
+        spreadsheetValue: dateValue
+      });
+    }
+    
+    if (excessColumnMapping.pharmacyName >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: excessColumnMapping.pharmacyName + 1,
+        spreadsheetValue: excessItem.pharmacyName || ''
+      });
+    }
+    
+    if (excessColumnMapping.item >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: excessColumnMapping.item + 1,
+        spreadsheetValue: excessItem.item || ''
+      });
+    }
+    
+    if (excessColumnMapping.qty >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: excessColumnMapping.qty + 1,
+        spreadsheetValue: excessItem.qty || ''
+      });
+    }
+    
+    if (excessColumnMapping.expirationDate >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: excessColumnMapping.expirationDate + 1,
+        spreadsheetValue: excessItem.expirationDate || ''
+      });
+    }
+
+    console.log('appendExcessStock updates:', updates);
+    
+    if (updates.length > 0) {
+      await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
+    }
+
+    return { success: true, row: nextRow };
+  } catch (error) {
+    console.error('appendExcessStock error:', error);
+    return { success: false, message: error.message };
+  }
+}
+
+// Update an excess stock item
+export async function updateExcessStock(excessItem, columnMapping = null) {
+  try {
+    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
+    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_WORKSHEET_NAME;
+
+    if (!spreadsheetId || !worksheetName) {
+      throw new Error('Missing excess stock spreadsheet configuration');
+    }
+
+    if (!excessItem || typeof excessItem !== 'object') {
+      throw new Error('Invalid excess item object provided for updateExcessStock');
+    }
+    
+    const row = excessItem.spreadsheetRow;
+    if (!row) throw new Error('excessItem.spreadsheetRow is required to update excess stock item');
+
+    // If no column mapping provided, read sheet to get it
+    let excessColumnMapping = columnMapping;
+    if (!excessColumnMapping) {
+      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
+      const headers = data.length > 0 ? data[0] : [];
+      excessColumnMapping = {
+        dateAdded: findColumnByHeader(headers, 'Date Added'),
+        pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
+        item: findColumnByHeader(headers, 'Item'),
+        qty: findColumnByHeader(headers, 'Qty'),
+        expirationDate: findColumnByHeader(headers, 'Expiration Date')
+      };
+    }
+
+    // Build updates array
+    const updates = [];
+
+    if (excessItem.item !== undefined && excessColumnMapping.item >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: excessColumnMapping.item + 1, 
+        spreadsheetValue: excessItem.item 
+      });
+    }
+    
+    if (excessItem.qty !== undefined && excessColumnMapping.qty >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: excessColumnMapping.qty + 1, 
+        spreadsheetValue: excessItem.qty 
+      });
+    }
+    
+    if (excessItem.expirationDate !== undefined && excessColumnMapping.expirationDate >= 0) {
+      updates.push({ 
+        spreadsheetRow: row, 
+        spreadsheetCol: excessColumnMapping.expirationDate + 1, 
+        spreadsheetValue: excessItem.expirationDate 
+      });
+    }
+
+    if (updates.length === 0) return { success: true, message: 'Nothing to update' };
+
+    const result = await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
+    return { success: true, result };
+  } catch (error) {
+    console.error('updateExcessStock error:', error);
+    return { success: false, message: error.message };
+  }
+}
