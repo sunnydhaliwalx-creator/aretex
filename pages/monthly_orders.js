@@ -83,26 +83,19 @@ export default function MonthlyOrders() {
               
               // Add each order for this pharmacy to results
               pharmacyOrders.forEach((order, orderIndex) => {
-                // Parse the date string to Date object for consistent formatting
-                let parsedDate = null;
-                if (order.Date) {
-                  // Try to parse the date string
-                  parsedDate = new Date(order.Date);
-                  if (isNaN(parsedDate)) {
-                    // If parsing fails, use the original string
-                    parsedDate = order.Date;
-                  }
-                }
+                // Keep the original date format from the JSON (European format)
+                const originalDate = order.Date || '';
 
                 results.push({
-                  date: parsedDate, // Store as Date object or string
+                  date: originalDate, // Store original date string to preserve European format
                   item: item,
                   ordered: order.Ordered || 0,
                   price: order.Price || 0,
                   supplier: order.Supplier || '',
                   status: 'Ordered', // Default status since we filtered by "Ordered"
                   spreadsheetRow: i + 1, // 1-based row number
-                  orderIndex: orderIndex // Index within the pharmacy's orders array
+                  orderIndex: orderIndex, // Index within the pharmacy's orders array
+                  ordersLogJson: ordersLogRaw // Store the full JSON string
                 });
               });
             }
@@ -329,8 +322,8 @@ export default function MonthlyOrders() {
                 </thead>
                 <tbody>
                   {filteredOrders.map((order, index) => (
-                    <tr key={index} className="lh-sm">
-                      <td className="text-center small">{order.date ? formatDateForSheets(order.date) : ''}</td>
+                    <tr key={index} className="lh-sm" data-orders-log={order.ordersLogJson}>
+                      <td className="text-center small">{order.date}</td>
                       <td>{order.item}</td>
                       <td className="text-center">{order.ordered}</td>
                       <td className="text-center">£{Number(order.price).toFixed(2)}</td>

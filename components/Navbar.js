@@ -7,6 +7,7 @@ export default function Navbar() {
   const router = useRouter();
   const [pharmacyName, setPharmacyName] = useState('');
   const [hasSession, setHasSession] = useState(false);
+  const [hasSpreadsheetId, setHasSpreadsheetId] = useState(false);
 
   useEffect(() => {
     const loadSession = async () => {
@@ -18,16 +19,19 @@ export default function Navbar() {
         if (!s) {
           setPharmacyName('');
           setHasSession(false);
+          setHasSpreadsheetId(false);
           console.debug('[Navbar] no server session');
           return;
         }
         setPharmacyName(s.pharmacyName || '');
         setHasSession(true);
+        setHasSpreadsheetId(!!s.spreadsheetId);
         console.debug('[Navbar] loaded session from server', s);
       } catch (err) {
         console.debug('[Navbar] error loading session from server', err);
         setPharmacyName('');
         setHasSession(false);
+        setHasSpreadsheetId(false);
       }
     };
 
@@ -41,14 +45,17 @@ export default function Navbar() {
           if (!newRaw) {
             setPharmacyName('');
             setHasSession(false);
+            setHasSpreadsheetId(false);
           } else {
             const ns = JSON.parse(newRaw);
             setPharmacyName(ns.pharmacyName || '');
             setHasSession(!!ns);
+            setHasSpreadsheetId(!!ns.spreadsheetId);
           }
         } catch (err) {
           setPharmacyName('');
           setHasSession(false);
+          setHasSpreadsheetId(false);
         }
       }
     };
@@ -82,6 +89,7 @@ export default function Navbar() {
       }
       setPharmacyName('');
       setHasSession(false);
+      setHasSpreadsheetId(false);
       try { window.dispatchEvent(new Event('aretex_session_changed')); } catch (e) {}
       router.push('/login');
     })();
@@ -91,8 +99,6 @@ export default function Navbar() {
     <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
       <div className="container-fluid">
         <Link href="/" className="navbar-brand d-flex align-items-center">
-          {/*<span className="placeholder-wave me-2" style={{width:40, height:40, display:'inline-block', background:'#ddd', borderRadius:6}}></span>
-          <span className="ms-1">Aretex</span>*/}
           <Image src="/logo_white.png" alt="Aretex" width={100} height={56} priority />
           {pharmacyName ? <small className="ms-3 small text-light"><small className="text-info"> {">"} </small>{pharmacyName}</small> : null}
         </Link>
@@ -103,18 +109,22 @@ export default function Navbar() {
           <ul className="navbar-nav ms-auto">
             {hasSession && (
               <>
-                <li className="nav-item">
-                  <Link href="/orders" className="nav-link">Orders</Link>
-                </li>
-                <li className="nav-item">
-                  <Link href="/monthly_orders" className="nav-link">Monthly Orders</Link>
-                </li>
-                <li className="nav-item">
-                  <Link href="/usage" className="nav-link">Usage</Link>
-                </li>
-                <li className="nav-item">
-                  <Link href="/stock_count" className="nav-link">Stock Count</Link>
-                </li>
+                {hasSpreadsheetId && (
+                  <>
+                    <li className="nav-item">
+                      <Link href="/orders" className="nav-link">Orders</Link>
+                    </li>
+                    <li className="nav-item">
+                      <Link href="/monthly_orders" className="nav-link">Monthly Orders</Link>
+                    </li>
+                    <li className="nav-item">
+                      <Link href="/usage" className="nav-link">Usage</Link>
+                    </li>
+                    <li className="nav-item">
+                      <Link href="/stock_count" className="nav-link">Stock Count</Link>
+                    </li>
+                  </>
+                )}
                 <li className="nav-item">
                   <Link href="/excess_stock" className="nav-link">Excess Stock</Link>
                 </li>

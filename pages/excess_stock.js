@@ -1,7 +1,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchStock, fetchExcessStock, appendExcessStock, updateExcessStock, formatDateForSheets, fetchMasterInventoryItemsOptions } from '../utils/sheetsAPI';
+import { fetchExcessStock, appendExcessStock, updateExcessStock, appendExcessStockRequest, fetchMasterInventoryItemsOptions, fetchStock } from '../utils/sheetsAPI';
 
 export default function ExcessStock() {
   // State management
@@ -36,9 +36,15 @@ export default function ExcessStock() {
   // Usage data
   const [usageData, setUsageData] = useState([]);
 
-  // Format date for European display (DD/MM/YYYY)
+  // Format date for European display (DD/MM/YYYY) - preserve original format from spreadsheet
   const formatDateEuropean = (dateStr) => {
     if (!dateStr) return '';
+    
+    // If it's already in European format (DD/MM/YYYY), return as is
+    if (typeof dateStr === 'string' && dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+      return dateStr;
+    }
+    
     try {
       const date = new Date(dateStr);
       if (isNaN(date)) return dateStr;
@@ -304,9 +310,30 @@ export default function ExcessStock() {
     }
   };
 
-  const handleInterested = (item) => {
-    // TODO: Implement interested functionality
-    alert(`Interested in ${item.item} from ${item.pharmacyName}`);
+  const handleInterested = async (item) => {
+    try {
+      const requestItem = {
+        dateAdded: item.dateAdded,
+        listingPharmacyName: item.pharmacyName, // Pharmacy that listed the item
+        item: item.item,
+        qty: item.qty,
+        expirationDate: item.expirationDate,
+        requestingPharmacyName: sessionData?.session?.pharmacyName || '' // Pharmacy making the request
+      };
+
+      const res = await appendExcessStockRequest(requestItem);
+      if (res && res.success) {
+        alert(`Interest registered for ${item.item} from ${item.pharmacyName}. They will be notified of your request.`);
+      } else {
+        const msg = (res && res.message) ? res.message : 'Unknown error registering interest';
+        setErrorModalMessage(msg);
+        setShowErrorModal(true);
+      }
+    } catch (err) {
+      console.error('appendExcessStockRequest failed', err);
+      setErrorModalMessage(err.message || 'Error registering interest');
+      setShowErrorModal(true);
+    }
   };
 
   // CSV Download function
@@ -514,7 +541,7 @@ export default function ExcessStock() {
                     <th>Date Added</th>
                     <th>Item</th>
                     <th>Expiration Date</th>
-                    <th>Monthly Usage</th>
+                    <th>Usage</th>
                     <th>Actions</th>
                   </tr>
                 </thead>

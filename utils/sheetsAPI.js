@@ -625,7 +625,7 @@ export async function fetchStock(spreadsheetId, groupPharmacyCodes = [], filterT
 export async function fetchExcessStock() {
   try {
     const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
-    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_WORKSHEET_NAME;
+    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME;
     
     if (!spreadsheetId || !worksheetName) {
       console.warn('Missing excess stock spreadsheet configuration');
@@ -685,7 +685,7 @@ export async function fetchExcessStock() {
 export async function appendExcessStock(excessItem, columnMapping = null) {
   try {
     const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
-    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_WORKSHEET_NAME;
+    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME;
 
     if (!spreadsheetId || !worksheetName) {
       throw new Error('Missing excess stock spreadsheet configuration');
@@ -779,7 +779,7 @@ export async function appendExcessStock(excessItem, columnMapping = null) {
 export async function updateExcessStock(excessItem, columnMapping = null) {
   try {
     const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
-    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_WORKSHEET_NAME;
+    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME;
 
     if (!spreadsheetId || !worksheetName) {
       throw new Error('Missing excess stock spreadsheet configuration');
@@ -839,6 +839,105 @@ export async function updateExcessStock(excessItem, columnMapping = null) {
     return { success: true, result };
   } catch (error) {
     console.error('updateExcessStock error:', error);
+    return { success: false, message: error.message };
+  }
+}
+
+// Append an excess stock request
+export async function appendExcessStockRequest(requestItem, columnMapping = null) {
+  try {
+    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
+    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME;
+
+    if (!spreadsheetId || !worksheetName) {
+      throw new Error('Missing excess stock requests spreadsheet configuration');
+    }
+
+    // If no column mapping provided, read sheet to get it
+    let requestsColumnMapping = columnMapping;
+    if (!requestsColumnMapping) {
+      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
+      const headers = data.length > 0 ? data[0] : [];
+      requestsColumnMapping = {
+        dateAdded: findColumnByHeader(headers, 'Date Added'),
+        listingPharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
+        item: findColumnByHeader(headers, 'Item'),
+        qty: findColumnByHeader(headers, 'Qty'),
+        expirationDate: findColumnByHeader(headers, 'Expiration Date'),
+        requestingPharmacyName: findColumnByHeader(headers, 'Requesting Pharmacy Name')
+      };
+    }
+
+    // Read sheet to determine next row
+    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
+
+    // Use helper to find the first empty row where key columns are blank
+    const keyCols = [requestsColumnMapping.dateAdded, requestsColumnMapping.listingPharmacyName, requestsColumnMapping.item]
+      .filter(col => col >= 0)
+      .map(col => col + 1); // Convert to 1-based for findFirstEmptyRow
+    
+    const nextRow = findFirstEmptyRow(data, keyCols.length > 0 ? keyCols : [1,2,3]);
+
+    // Build updates array for only the columns that exist
+    const updates = [];
+    
+    if (requestsColumnMapping.dateAdded >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: requestsColumnMapping.dateAdded + 1,
+        spreadsheetValue: requestItem.dateAdded || ''
+      });
+    }
+    
+    if (requestsColumnMapping.listingPharmacyName >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: requestsColumnMapping.listingPharmacyName + 1,
+        spreadsheetValue: requestItem.listingPharmacyName || ''
+      });
+    }
+    
+    if (requestsColumnMapping.item >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: requestsColumnMapping.item + 1,
+        spreadsheetValue: requestItem.item || ''
+      });
+    }
+    
+    if (requestsColumnMapping.qty >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: requestsColumnMapping.qty + 1,
+        spreadsheetValue: requestItem.qty || ''
+      });
+    }
+    
+    if (requestsColumnMapping.expirationDate >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: requestsColumnMapping.expirationDate + 1,
+        spreadsheetValue: requestItem.expirationDate || ''
+      });
+    }
+
+    if (requestsColumnMapping.requestingPharmacyName >= 0) {
+      updates.push({
+        spreadsheetRow: nextRow,
+        spreadsheetCol: requestsColumnMapping.requestingPharmacyName + 1,
+        spreadsheetValue: requestItem.requestingPharmacyName || ''
+      });
+    }
+
+    console.log('appendExcessStockRequest updates:', updates);
+    
+    if (updates.length > 0) {
+      await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
+    }
+
+    return { success: true, row: nextRow };
+  } catch (error) {
+    console.error('appendExcessStockRequest error:', error);
     return { success: false, message: error.message };
   }
 }
