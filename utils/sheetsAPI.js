@@ -643,7 +643,7 @@ export async function fetchExcessStock() {
       pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
       item: findColumnByHeader(headers, 'Item'),
       qty: findColumnByHeader(headers, 'Qty'),
-      expirationDate: findColumnByHeader(headers, 'Expiration Date')
+      expirationDate: findColumnByHeader(headers, 'Expiration')
     };
 
     const rows = data.slice(1); // Skip header row
@@ -701,7 +701,7 @@ export async function appendExcessStock(excessItem, columnMapping = null) {
         pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
         item: findColumnByHeader(headers, 'Item'),
         qty: findColumnByHeader(headers, 'Qty'),
-        expirationDate: findColumnByHeader(headers, 'Expiration Date')
+        expirationDate: findColumnByHeader(headers, 'Expiration')
       };
     }
 
@@ -802,7 +802,7 @@ export async function updateExcessStock(excessItem, columnMapping = null) {
         pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
         item: findColumnByHeader(headers, 'Item'),
         qty: findColumnByHeader(headers, 'Qty'),
-        expirationDate: findColumnByHeader(headers, 'Expiration Date')
+        expirationDate: findColumnByHeader(headers, 'Expiration')
       };
     }
 
@@ -863,7 +863,7 @@ export async function appendExcessStockRequest(requestItem, columnMapping = null
         listingPharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
         item: findColumnByHeader(headers, 'Item'),
         qty: findColumnByHeader(headers, 'Qty'),
-        expirationDate: findColumnByHeader(headers, 'Expiration Date'),
+        expirationDate: findColumnByHeader(headers, 'Expiration'),
         requestingPharmacyName: findColumnByHeader(headers, 'Requesting Pharmacy Name')
       };
     }

@@ -236,11 +236,18 @@ export default function ExcessStock() {
       return;
     }
 
+    // Convert month input (YYYY-MM) to MM/YYYY format
+    const formatExpirationDate = (monthValue) => {
+      if (!monthValue) return '';
+      const [year, month] = monthValue.split('-');
+      return `${month}/${year}`;
+    };
+
     const now = new Date();
     const newExcessItem = {
       item: addItem,
       qty: parseInt(addQty, 10),
-      expirationDate: addExpirationDate,
+      expirationDate: formatExpirationDate(addExpirationDate),
       pharmacyName: sessionData?.session?.pharmacyName || '',
       dateAdded: now
     };
@@ -267,25 +274,23 @@ export default function ExcessStock() {
     }
   };
 
-  const handleEdit = (index) => {
-    const item = filteredItems[index];
-    setCurrentEditIndex(index);
-    setEditItem(item.item);
-    setEditQty(item.qty);
-    setEditExpirationDate(item.expirationDate);
-    setShowEditModal(true);
-  };
-
   const handleSaveEdit = async () => {
     if (currentEditIndex === null) return setShowEditModal(false);
     
     try {
+      // Convert month input (YYYY-MM) to MM/YYYY format
+      const formatExpirationDate = (monthValue) => {
+        if (!monthValue) return '';
+        const [year, month] = monthValue.split('-');
+        return `${month}/${year}`;
+      };
+
       const targetItem = filteredItems[currentEditIndex];
       const itemToUpdate = {
         ...targetItem,
         item: editItem,
         qty: parseInt(editQty, 10),
-        expirationDate: editExpirationDate
+        expirationDate: formatExpirationDate(editExpirationDate)
       };
 
       const res = await updateExcessStock(itemToUpdate, excessColumnMapping);
@@ -308,6 +313,23 @@ export default function ExcessStock() {
       setEditExpirationDate('');
       setCurrentEditIndex(null);
     }
+  };
+
+  const handleEdit = (index) => {
+    const item = filteredItems[index];
+    setCurrentEditIndex(index);
+    setEditItem(item.item);
+    setEditQty(item.qty);
+    
+    // Convert MM/YYYY back to YYYY-MM format for the month input
+    const convertToMonthInput = (mmYyyy) => {
+      if (!mmYyyy || !mmYyyy.includes('/')) return '';
+      const [month, year] = mmYyyy.split('/');
+      return `${year}-${month.padStart(2, '0')}`;
+    };
+    
+    setEditExpirationDate(convertToMonthInput(item.expirationDate));
+    setShowEditModal(true);
   };
 
   const handleInterested = async (item) => {
@@ -346,7 +368,7 @@ export default function ExcessStock() {
     const csvData = filteredItems.map(item => [
       formatDateEuropean(item.dateAdded),
       item.item || '',
-      formatDateEuropean(item.expirationDate),
+      item.expirationDate || '',
       getUsageForItem(item.item)
     ]);
 
@@ -412,9 +434,9 @@ export default function ExcessStock() {
               />
             </div>
             <div className="mb-3">
-              <label htmlFor="editExpirationDate" className="form-label">Expiration Date</label>
+              <label htmlFor="editExpirationDate" className="form-label">Expiration</label>
               <input 
-                type="date" 
+                type="month" 
                 className="form-control" 
                 id="editExpirationDate"
                 value={editExpirationDate}
@@ -495,9 +517,9 @@ export default function ExcessStock() {
                 </div>
                 <div className="col-12 col-sm-6 col-md-2">
                   <input 
-                    type="date" 
+                    type="month" 
                     className="form-control" 
-                    placeholder="Expiration Date" 
+                    placeholder="MM/YYYY" 
                     required
                     value={addExpirationDate}
                     onChange={(e) => setAddExpirationDate(e.target.value)}
@@ -540,7 +562,7 @@ export default function ExcessStock() {
                   <tr className="text-center small">
                     <th>Date Added</th>
                     <th>Item</th>
-                    <th>Expiration Date</th>
+                    <th>Expiration</th>
                     <th>Usage</th>
                     <th>Actions</th>
                   </tr>
@@ -550,7 +572,7 @@ export default function ExcessStock() {
                     <tr key={index} className="lh-sm">
                       <td className="text-center small">{formatDateEuropean(item.dateAdded)}</td>
                       <td>{item.item}</td>
-                      <td className="text-center small">{formatDateEuropean(item.expirationDate)}</td>
+                      <td className="text-center small">{item.expirationDate}</td>
                       <td className="text-center">{getUsageForItem(item.item)}</td>
                       <td>
                         {item.pharmacyName === sessionData?.session?.pharmacyName ? (
