@@ -70,7 +70,8 @@ export default function MonthlyOrders() {
           const ordersLogRaw = row[ordersLogColIndex];
 
           // Only process rows with Status = "Ordered"
-          if (status !== 'Ordered') continue;
+
+          if (!["Ordered", "Unavailable", "Over DT", "Discrepancy", "Received"].includes(status)) continue;
           if (!item || !ordersLogRaw) continue;
 
           try {
@@ -92,7 +93,7 @@ export default function MonthlyOrders() {
                   ordered: order.Ordered || 0,
                   price: order.Price || 0,
                   supplier: order.Supplier || '',
-                  status: 'Ordered', // Default status since we filtered by "Ordered"
+                  status: status, // Default status since we filtered by "Ordered"
                   spreadsheetRow: i + 1, // 1-based row number
                   orderIndex: orderIndex, // Index within the pharmacy's orders array
                   ordersLogJson: ordersLogRaw // Store the full JSON string
@@ -315,6 +316,7 @@ export default function MonthlyOrders() {
                     <th>Date</th>
                     <th>Item</th>
                     <th>Ordered</th>
+                    <th>Status</th>
                     <th>Price</th>
                     <th>Supplier</th>
                     <th>Actions</th>
@@ -326,21 +328,26 @@ export default function MonthlyOrders() {
                       <td className="text-center small">{order.date}</td>
                       <td>{order.item}</td>
                       <td className="text-center">{order.ordered}</td>
+                      <td className="text-center">{order.status}</td>
                       <td className="text-center">£{Number(order.price).toFixed(2)}</td>
                       <td className="text-center small">{order.supplier}</td>
                       <td>
-                        <button
-                          className="btn btn-sm btn-outline-success small py-0 px-2 me-1"
-                          onClick={() => handleMarkReceived(order, index)}
-                        >
-                          Mark Received
-                        </button>
-                        <button
-                          className="btn btn-sm btn-outline-danger small py-0 px-2"
-                          onClick={() => handleMarkDiscrepancy(index)}
-                        >
-                          Mark Discrepancy
-                        </button>
+                        {order.status === 'Ordered' && (
+                          <>
+                            <button
+                              className="btn btn-sm btn-outline-success small py-0 px-2 me-1"
+                              onClick={() => handleMarkReceived(order, index)}
+                            >
+                              Mark Received
+                            </button>
+                            <button
+                              className="btn btn-sm btn-outline-danger small py-0 px-2"
+                              onClick={() => handleMarkDiscrepancy(index)}
+                            >
+                              Mark Discrepancy
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
