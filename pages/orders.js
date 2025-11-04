@@ -254,15 +254,21 @@ export default function Orders() {
   };
 
   // allowed for orders marked Ordered and changes status to Received or Discrepancy
-  const markReceived = async (order, index) => {
+  const markReceived = async (order) => {
     try {
       const status = "Received";
-      const orderToUpdate = { ...orders[index], status: status };
+      // Find the order in the original orders array using spreadsheetRow
+      const originalIndex = orders.findIndex(o => o.spreadsheetRow === order.spreadsheetRow);
+      if (originalIndex === -1) {
+        throw new Error('Order not found in original list');
+      }
+      
+      const orderToUpdate = { ...orders[originalIndex], status: status };
       const res = await updateOrder(orderToUpdate, ordersColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
 
       const updatedOrders = [...orders];
-      updatedOrders[index] = { ...updatedOrders[index], status: status };
+      updatedOrders[originalIndex] = { ...updatedOrders[originalIndex], status: status };
       setOrders(updatedOrders);
     } catch (err) {
       console.error('markReceived error', err);
@@ -334,13 +340,19 @@ export default function Orders() {
   
   // Edit modal handlers removed; using Mark Urgent and Discrepancy flows instead
 
-  const handleMarkUrgent = async (order, index) => {
+  const handleMarkUrgent = async (order) => {
     try {
+      // Find the order in the original orders array using spreadsheetRow
+      const originalIndex = orders.findIndex(o => o.spreadsheetRow === order.spreadsheetRow);
+      if (originalIndex === -1) {
+        throw new Error('Order not found in original list');
+      }
+      
       const orderToUpdate = { ...order, urgent: true };
       const res = await updateOrder(orderToUpdate, ordersColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
       const updated = [...orders];
-      updated[index] = { ...updated[index], urgent: true };
+      updated[originalIndex] = { ...updated[originalIndex], urgent: true };
       setOrders(updated);
     } catch (err) {
       console.error('mark urgent error', err);
@@ -349,12 +361,14 @@ export default function Orders() {
     }
   };
 
-  const handleMarkReceived = (order, index) => {
-    return markReceived(order, index);
+  const handleMarkReceived = (order) => {
+    return markReceived(order);
   };
 
-  const handleMarkDiscrepancy = (index) => {
-    setCurrentEditIndex(index);
+  const handleMarkDiscrepancy = (order) => {
+    // Find the order in the original orders array using spreadsheetRow
+    const originalIndex = orders.findIndex(o => o.spreadsheetRow === order.spreadsheetRow);
+    setCurrentEditIndex(originalIndex);
     setShowDiscrepancyModal(true);
   };
 
@@ -388,7 +402,7 @@ export default function Orders() {
     const headers = headerCells.slice(0, -1).map(th => th.textContent.trim()); // Exclude last column (Actions)
     
     const csvData = filteredOrders.map(order => [
-      order.date ? formatDateForSheets(order.date) : '',
+      order.date || '', // Use the original date string
       `${order.item}${order.brand ? ` (${order.brand})` : ''}`,
       order.qty || '',
       order.urgent ? 'Yes' : 'No',
@@ -582,7 +596,7 @@ export default function Orders() {
             <tbody>
               {filteredOrders.map((order, index) => (
                 <tr key={index} className="lh-sm">
-                  <td className="text-center small">{order.date ? formatDateForSheets(order.date) : ''}</td>
+                  <td className="text-center small">{order.date}</td>
                   <td>{order.item}{order.brand ? ` (${order.brand})` : ''}</td>
                   <td className="text-center">{order.qty}</td>
                   <td className="text-center small px-0">
@@ -592,7 +606,7 @@ export default function Orders() {
                       (order.status === 'Ordered' || order.status === '') ? (
                         <button
                           className="btn btn-sm btn-outline-primary small py-0 px-1"
-                          onClick={() => handleMarkUrgent(order, index)}
+                          onClick={() => handleMarkUrgent(order)}
                         >
                           Mark Urgent
                         </button>
@@ -620,13 +634,13 @@ export default function Orders() {
                       <>
                         <button
                           className="btn btn-sm btn-outline-success small py-0 px-2 me-1"
-                          onClick={() => handleMarkReceived(order, index)}
+                          onClick={() => handleMarkReceived(order)}
                         >
                           Mark Received
                         </button>
                         <button
                           className="btn btn-sm btn-outline-danger small py-0 px-2"
-                          onClick={() => handleMarkDiscrepancy(index)}
+                          onClick={() => handleMarkDiscrepancy(order)}
                         >
                           Mark Discrepancy
                         </button>

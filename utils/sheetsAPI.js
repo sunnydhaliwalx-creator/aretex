@@ -161,21 +161,48 @@ export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 
       // Skip rows where pharmacy doesn't match
       if (rowPharmacy !== pharmacy) continue;
 
-      // Parse date - try common formats
+      // Parse date - preserve original format from spreadsheet
+      let dateForDisplay = '';
       let parsedDate = null;
+      
       if (rawDate) {
-        // If it's a serial number (Google Sheets), it may be a number - try Date
         if (typeof rawDate === 'number') {
           // Excel/Sheets serial day -> JS date (Sheets uses 1899-12-30 origin)
           parsedDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+          // Format as DD/MM/YYYY HH:mm to match spreadsheet display
+          const day = String(parsedDate.getDate()).padStart(2, '0');
+          const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+          const year = parsedDate.getFullYear();
+          const hours = String(parsedDate.getHours()).padStart(2, '0');
+          const minutes = String(parsedDate.getMinutes()).padStart(2, '0');
+          dateForDisplay = `${day}/${month}/${year} ${hours}:${minutes}`;
+        } else if (typeof rawDate === 'string') {
+          // If it's already a formatted string from the spreadsheet, use it as-is
+          dateForDisplay = rawDate;
+          // Still try to parse for filtering purposes
+          parsedDate = new Date(rawDate);
+          if (isNaN(parsedDate)) {
+            // Try different parsing approaches
+            const parts = rawDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+            if (parts) {
+              parsedDate = new Date(parts[3], parts[2] - 1, parts[1]); // year, month-1, day
+            }
+          }
         } else {
-          // Attempt ISO or localized parse
-          const d = new Date(rawDate);
-          if (!isNaN(d)) parsedDate = d;
+          // Fallback to direct Date construction
+          parsedDate = new Date(rawDate);
+          if (!isNaN(parsedDate)) {
+            const day = String(parsedDate.getDate()).padStart(2, '0');
+            const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+            const year = parsedDate.getFullYear();
+            const hours = String(parsedDate.getHours()).padStart(2, '0');
+            const minutes = String(parsedDate.getMinutes()).padStart(2, '0');
+            dateForDisplay = `${day}/${month}/${year} ${hours}:${minutes}`;
+          }
         }
       }
 
-      // If no parsed date, skip
+      // If we couldn't parse a date for filtering, skip this row
       if (!parsedDate || isNaN(parsedDate)) continue;
 
       // Keep only rows within last 12 months (>= twelveMonthsAgo)
@@ -189,12 +216,16 @@ export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 
       const cost = columnMapping.cost >= 0 ? row[columnMapping.cost] || '' : '';
       const minSupplier = columnMapping.minSupplier >= 0 ? row[columnMapping.minSupplier] || '' : '';
 
-      // include 1-based spreadsheet row number so callers can update rows (add 2 to account for header + 0-based index)
-      results.push({ date: parsedDate.toISOString().slice(0,10), inventoryItem, qty, status, urgent, cost, minSupplier, spreadsheetRow: i + 2 });
+      // Use dateForDisplay (formatted string) instead of ISO string
+      results.push({ date: dateForDisplay, inventoryItem, qty, status, urgent, cost, minSupplier, spreadsheetRow: i + 2 });
     }
 
-    // Sort by date descending (newest first)
-    results.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Sort by parsed date descending (newest first) but preserve display format
+    results.sort((a, b) => {
+      const dateA = new Date(a.date.split(' ')[0].split('/').reverse().join('/') + ' ' + (a.date.split(' ')[1] || '00:00'));
+      const dateB = new Date(b.date.split(' ')[0].split('/').reverse().join('/') + ' ' + (b.date.split(' ')[1] || '00:00'));
+      return dateB - dateA;
+    });
 
     return { orders: results, columnMapping };
   } catch (error) {
@@ -455,9 +486,8 @@ export async function updateOrder(order, columnMapping = null) {
         qty: findColumnByHeader(headers, 'Qty'),
         urgent: findColumnByHeader(headers, 'Urgent?'),
         status: findColumnByHeader(headers, 'Status'),
-        comments: findColumnByHeader(headers, 'Comments'),
-        cost: findColumnByHeader(headers, 'Cost'),
-        minSupplier: findColumnByHeader(headers, 'Min Supplier')
+        comments: findColumnByHeader(headers, 'Comments')
+        // Removed cost and minSupplier from updateOrder mapping
       };
     }
 
@@ -512,21 +542,7 @@ export async function updateOrder(order, columnMapping = null) {
       });
     }
 
-    if (order.cost !== undefined && ordersColumnMapping.cost >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: ordersColumnMapping.cost + 1, 
-        spreadsheetValue: order.cost 
-      });
-    }
-
-    if (order.minSupplier !== undefined && ordersColumnMapping.minSupplier >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: ordersColumnMapping.minSupplier + 1, 
-        spreadsheetValue: order.minSupplier 
-      });
-    }
+    // Removed cost and minSupplier update logic
 
     if (updates.length === 0) return { success: true, message: 'Nothing to update' };
 
