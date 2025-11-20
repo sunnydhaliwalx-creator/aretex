@@ -1,7 +1,15 @@
 // utils/sheetsAPI.js - PROTECTED VERSION with comprehensive error handling
-export const sheetsAPI = {
-  // Read data from Google Sheets
-  async readSheet(spreadsheetId, worksheetName = null, range = null) {
+
+/**
+ * Read data from Google Sheets.
+ * Makes a request to the API endpoint to fetch spreadsheet data.
+ * 
+ * @param {string} spreadsheetId - The spreadsheet ID to read from
+ * @param {string} [worksheetName=null] - The worksheet name to read from
+ * @param {string} [range=null] - Optional range to read (e.g., 'A1:D10')
+ * @returns {Promise<Array<Array>>} 2D array of spreadsheet data
+ */
+export async function readSheet(spreadsheetId, worksheetName = null, range = null) {
     try {
       if (!spreadsheetId) {
         console.error('No spreadsheet ID provided');
@@ -39,10 +47,18 @@ export const sheetsAPI = {
       console.error('Error reading sheet:', error);
       return [];
     }
-  },
+}
 
-  // Update specific cells
-  async updateCells(spreadsheetId, worksheetName, updates) {
+/**
+ * Update specific cells in Google Sheets.
+ * Used to update individual cells at specific row/column coordinates.
+ * 
+ * @param {string} spreadsheetId - The spreadsheet ID to update
+ * @param {string} worksheetName - The worksheet name to update
+ * @param {Array<{spreadsheetRow: number, spreadsheetCol: number, spreadsheetValue: any}>} updates - Array of cell updates
+ * @returns {Promise<Object>} Result object with success status
+ */
+export async function updateCells(spreadsheetId, worksheetName, updates) {
     try {
       if (!spreadsheetId || !worksheetName || !updates) {
         throw new Error('Missing required parameters for updateCells');
@@ -76,10 +92,19 @@ export const sheetsAPI = {
       console.error('Error updating cells:', error);
       throw error;
     }
-  },
+}
 
-  // Bulk update a range
-  async updateRange(spreadsheetId, worksheetName, range, values) {
+/**
+ * Bulk update a range of cells in Google Sheets.
+ * Used to update multiple cells in a contiguous range at once.
+ * 
+ * @param {string} spreadsheetId - The spreadsheet ID to update
+ * @param {string} worksheetName - The worksheet name to update
+ * @param {string} range - The range to update (e.g., 'A1:D10')
+ * @param {Array<Array>} values - 2D array of values to write
+ * @returns {Promise<Object>} Result object with success status
+ */
+export async function updateRange(spreadsheetId, worksheetName, range, values) {
     try {
       if (!spreadsheetId || !worksheetName || !range || !values) {
         throw new Error('Missing required parameters for updateRange');
@@ -114,171 +139,60 @@ export const sheetsAPI = {
       console.error('Error updating range:', error);
       throw error;
     }
-  }
-};
-
-
-// Additional helper to fetch filtered orders for the Orders page
-export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 'CLI') {
-  try {
-    const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID;
-    console.log('fetchFilteredOrders',{spreadsheetId, worksheetName, pharmacy});
-
-    // Read entire sheet (client helper will call /api/googleSheets)
-    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
-
-    if (!Array.isArray(data) || data.length === 0) return { orders: [], columnMapping: {} };
-
-    // Get headers from row 1 (index 0) and create column mapping
-    const headers = data.length > 0 ? data[0] : [];
-    const columnMapping = {
-      date: findColumnByHeader(headers, 'Date'),
-      pharmacy: findColumnByHeader(headers, 'Pharmacy'),
-      item: findColumnByHeader(headers, 'Item'),
-      qty: findColumnByHeader(headers, 'Qty'),
-      urgent: findColumnByHeader(headers, 'Urgent?'),
-      status: findColumnByHeader(headers, 'Status'),
-      comments: findColumnByHeader(headers, 'Comments'),
-      cost: findColumnByHeader(headers, 'Cost'),
-      minSupplier: findColumnByHeader(headers, 'Min Supplier')
-    };
-
-    const rows = data.slice(1); // Skip header row
-
-    // Parse date threshold: 12 months ago
-    const now = new Date();
-    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, now.getDate());
-
-    const results = [];
-
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] || [];
-
-      // Use column mapping to get values
-      const rawDate = columnMapping.date >= 0 ? row[columnMapping.date] : null;
-      const rowPharmacy = columnMapping.pharmacy >= 0 ? (row[columnMapping.pharmacy] || '').toString().trim() : '';
-
-      // Skip rows where pharmacy doesn't match
-      if (rowPharmacy !== pharmacy) continue;
-
-      // Parse date - preserve original format from spreadsheet
-      let dateForDisplay = '';
-      let parsedDate = null;
-      
-      if (rawDate) {
-        if (typeof rawDate === 'number') {
-          // Excel/Sheets serial day -> JS date (Sheets uses 1899-12-30 origin)
-          parsedDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
-          // Format as DD/MM/YYYY HH:mm to match spreadsheet display
-          const day = String(parsedDate.getDate()).padStart(2, '0');
-          const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-          const year = parsedDate.getFullYear();
-          const hours = String(parsedDate.getHours()).padStart(2, '0');
-          const minutes = String(parsedDate.getMinutes()).padStart(2, '0');
-          dateForDisplay = `${day}/${month}/${year} ${hours}:${minutes}`;
-        } else if (typeof rawDate === 'string') {
-          // If it's already a formatted string from the spreadsheet, use it as-is
-          dateForDisplay = rawDate;
-          // Still try to parse for filtering purposes
-          parsedDate = new Date(rawDate);
-          if (isNaN(parsedDate)) {
-            // Try different parsing approaches
-            const parts = rawDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-            if (parts) {
-              parsedDate = new Date(parts[3], parts[2] - 1, parts[1]); // year, month-1, day
-            }
-          }
-        } else {
-          // Fallback to direct Date construction
-          parsedDate = new Date(rawDate);
-          if (!isNaN(parsedDate)) {
-            const day = String(parsedDate.getDate()).padStart(2, '0');
-            const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-            const year = parsedDate.getFullYear();
-            const hours = String(parsedDate.getHours()).padStart(2, '0');
-            const minutes = String(parsedDate.getMinutes()).padStart(2, '0');
-            dateForDisplay = `${day}/${month}/${year} ${hours}:${minutes}`;
-          }
-        }
-      }
-
-      // If we couldn't parse a date for filtering, skip this row
-      if (!parsedDate || isNaN(parsedDate)) continue;
-
-      // Keep only rows within last 12 months (>= twelveMonthsAgo)
-      if (parsedDate < twelveMonthsAgo) continue;
-
-      const inventoryItem = columnMapping.item >= 0 ? row[columnMapping.item] || '' : '';
-      const qty = columnMapping.qty >= 0 && row[columnMapping.qty] !== undefined && row[columnMapping.qty] !== '' ? Number(row[columnMapping.qty]) : null;
-      const urgent = columnMapping.urgent >= 0 ? (row[columnMapping.urgent] || '').toString().trim() === 'Y' : false;
-      const status = columnMapping.status >= 0 ? row[columnMapping.status] || '' : '';
-      const comments = columnMapping.comments >= 0 ? (row[columnMapping.comments] || '').toString().trim() : '';
-      const cost = columnMapping.cost >= 0 ? row[columnMapping.cost] || '' : '';
-      const minSupplier = columnMapping.minSupplier >= 0 ? row[columnMapping.minSupplier] || '' : '';
-
-      // Use dateForDisplay (formatted string) instead of ISO string
-      results.push({ date: dateForDisplay, inventoryItem, qty, status, urgent, cost, minSupplier, spreadsheetRow: i + 2 });
-    }
-
-    // Sort by parsed date descending (newest first) but preserve display format
-    results.sort((a, b) => {
-      const dateA = new Date(a.date.split(' ')[0].split('/').reverse().join('/') + ' ' + (a.date.split(' ')[1] || '00:00'));
-      const dateB = new Date(b.date.split(' ')[0].split('/').reverse().join('/') + ' ' + (b.date.split(' ')[1] || '00:00'));
-      return dateB - dateA;
-    });
-
-    return { orders: results, columnMapping };
-  } catch (error) {
-    console.error('fetchFilteredOrders error:', error);
-    return { orders: [], columnMapping: {} };
-  }
 }
-
 
 /**
  * Find the first spreadsheet row (1-based) where all specified columns are empty.
- * rows: array of row arrays as returned from sheetsAPI.readSheet
- * colsToCheck: array of 1-based column numbers to check (e.g., [1,2,3,4] for A-D)
- * Returns: 1-based row index where all specified columns are blank after the first seen data row.
+ * Used to determine where to insert new data without overwriting existing rows.
+ * 
+ * @param {Array<Array>} rows - Array of row arrays as returned from readSheet
+ * @param {Array<number>} [colsToCheck=[1,2,3,4]] - Array of 1-based column numbers to check (e.g., [1,2,3,4] for columns A-D)
+ * @returns {number} 1-based row index where all specified columns are blank after the first seen data row
  */
 export function findFirstEmptyRow(rows, colsToCheck = [1,2,3,4]) {
-  try {
-    if (!Array.isArray(rows) || rows.length === 0) return 1;
+    try {
+      if (!Array.isArray(rows) || rows.length === 0) return 1;
 
-    let seenData = false;
-    // Iterate rows top-to-bottom
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] || [];
+      let seenData = false;
+      // Iterate rows top-to-bottom
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i] || [];
 
-      // Check each requested column (convert 1-based to 0-based index)
-      let anyNonEmpty = false;
-      for (let j = 0; j < colsToCheck.length; j++) {
-        const col = colsToCheck[j] - 1;
-        const v = row[col];
-        if (v !== undefined && v !== null && String(v).trim() !== '') {
-          anyNonEmpty = true;
-          break;
+        // Check each requested column (convert 1-based to 0-based index)
+        let anyNonEmpty = false;
+        for (let j = 0; j < colsToCheck.length; j++) {
+          const col = colsToCheck[j] - 1;
+          const v = row[col];
+          if (v !== undefined && v !== null && String(v).trim() !== '') {
+            anyNonEmpty = true;
+            break;
+          }
         }
+
+        if (anyNonEmpty) {
+          seenData = true;
+          continue; // this row contains data in one of the monitored columns
+        }
+
+        // If row has all monitored columns empty and we've already seen data, return this row index (1-based)
+        if (!anyNonEmpty && seenData) return i + 1;
       }
 
-      if (anyNonEmpty) {
-        seenData = true;
-        continue; // this row contains data in one of the monitored columns
-      }
-
-      // If row has all monitored columns empty and we've already seen data, return this row index (1-based)
-      if (!anyNonEmpty && seenData) return i + 1;
-    }
-
-    // If we scanned all rows and didn't find an empty monitored row after data, append after last row
-    return rows.length + 1;
-  } catch (err) {
+      // If we scanned all rows and didn't find an empty monitored row after data, append after last row
+      return rows.length + 1;
+    } catch (err) {
     console.warn('findFirstEmptyRow error, defaulting to append', err);
     return (Array.isArray(rows) ? rows.length : 0) + 1;
   }
 }
 
-// Format a Date (or date-parsable value) into Google Sheets friendly 'MM/DD/YYYY HH:mm' local time
+/**
+ * Format a Date (or date-parsable value) into Google Sheets friendly 'DD/MM/YYYY HH:mm' local time.
+ * Used to ensure consistent date formatting across all spreadsheet operations.
+ * 
+ * @param {Date|string|number} d - Date to format (Date object, date string, or timestamp)
+ * @returns {string} Formatted date string in DD/MM/YYYY HH:mm format
+ */
 export function formatDateForSheets(d) {
   try {
     const date = (d instanceof Date) ? d : new Date(d);
@@ -295,665 +209,5 @@ export function formatDateForSheets(d) {
   } catch (err) {
     console.warn('formatDateForSheets error', err);
     return '';
-  }
-}
-
-
-// Fetch master items from the ProductFile worksheet
-export async function fetchMasterInventoryItemsOptions(
-  spreadsheetId = process.env.NEXT_PUBLIC_MASTER_INVENTORY_ITEMS_GOOGLE_SPREADSHEET_ID,
-  worksheetName = process.env.NEXT_PUBLIC_MASTER_INVENTORY_ITEMS_WORKSHEET_NAME
-) {
-  try {
-    if (!spreadsheetId) return [];
-    
-    // Read entire sheet
-    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
-    if (!Array.isArray(data) || data.length === 0) return [];
-    
-    const rows = data.slice();
-    const results = [];
-    
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] || [];
-      
-      // Column mapping (1-based)
-      const item = row[1] || '';
-      const brand = row[8] || '';
-      
-      // Skip rows without an item
-      if (!item) continue;
-      
-      results.push({ item, brand });
-    }
-    
-    // Sort by item ascending (case-insensitive)
-    results.sort((a, b) => {
-      const itemA = a.item.toString().toLowerCase();
-      const itemB = b.item.toString().toLowerCase();
-      if (itemA < itemB) return -1;
-      if (itemA > itemB) return 1;
-      return 0;
-    });
-    
-    console.log('Master Products List:', results);
-    return results;
-  } catch (error) {
-    console.error('fetchMasterInventoryItemsOptions error:', error);
-    return [];
-  }
-}
-
-// Helper function to find column index by header name
-function findColumnByHeader(headers, headerName) {
-  if (!Array.isArray(headers)) return -1;
-  return headers.findIndex(header => 
-    header && header.toString().trim().toLowerCase() === headerName.toLowerCase()
-  );
-}
-
-// Append a single order row to the Current worksheet without overwriting formula columns
-export async function appendOrder(order, columnMapping = null) {
-  try {
-    const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID
-    const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME;
-
-    // If no column mapping provided, read sheet to get it
-    let ordersColumnMapping = columnMapping;
-    if (!ordersColumnMapping) {
-      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
-      const headers = data.length > 0 ? data[0] : [];
-      ordersColumnMapping = {
-        date: findColumnByHeader(headers, 'Date'),
-        pharmacy: findColumnByHeader(headers, 'Pharmacy'),
-        item: findColumnByHeader(headers, 'Item'),
-        qty: findColumnByHeader(headers, 'Qty'),
-        urgent: findColumnByHeader(headers, 'Urgent?'),
-        status: findColumnByHeader(headers, 'Status'),
-        comments: findColumnByHeader(headers, 'Comments'),
-        cost: findColumnByHeader(headers, 'Cost'),
-        minSupplier: findColumnByHeader(headers, 'Min Supplier')
-      };
-    }
-
-    // Read sheet to determine next row (we still need this for findFirstEmptyRow)
-    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
-
-    // Use helper to find the first empty row where key columns are blank
-    const keyCols = [ordersColumnMapping.date, ordersColumnMapping.pharmacy, ordersColumnMapping.item, ordersColumnMapping.qty]
-      .filter(col => col >= 0)
-      .map(col => col + 1); // Convert to 1-based for findFirstEmptyRow
-    
-    const nextRow = findFirstEmptyRow(data, keyCols.length > 0 ? keyCols : [1,2,3,4]);
-
-    // Prepare values for each column
-    const itemValue = order.brand ? `${order.item} (${order.brand})` : (order.item || '');
-    const rawDate = order.date !== undefined && order.date !== null && order.date !== '' ? order.date : new Date();
-    const dateValue = formatDateForSheets(rawDate);
-    const urgentFlag = order.urgent ? 'Y' : '';
-
-    // Build updates array for only the columns that exist
-    const updates = [];
-    
-    if (ordersColumnMapping.date >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: ordersColumnMapping.date + 1, // Convert to 1-based
-        spreadsheetValue: dateValue
-      });
-    }
-    
-    if (ordersColumnMapping.pharmacy >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: ordersColumnMapping.pharmacy + 1,
-        spreadsheetValue: order.pharmacyCode || ''
-      });
-    }
-    
-    if (ordersColumnMapping.item >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: ordersColumnMapping.item + 1,
-        spreadsheetValue: itemValue
-      });
-    }
-    
-    if (ordersColumnMapping.qty >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: ordersColumnMapping.qty + 1,
-        spreadsheetValue: order.qty === undefined ? '' : order.qty
-      });
-    }
-    
-    if (ordersColumnMapping.urgent >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: ordersColumnMapping.urgent + 1,
-        spreadsheetValue: urgentFlag
-      });
-    }
-    
-    if (ordersColumnMapping.status >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: ordersColumnMapping.status + 1,
-        spreadsheetValue: order.status || ''
-      });
-    }
-    
-    if (ordersColumnMapping.comments >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: ordersColumnMapping.comments + 1,
-        spreadsheetValue: order.comments || ''
-      });
-    }
-
-    console.log('appendOrder updates:', updates);
-    
-    if (updates.length > 0) {
-      await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
-    }
-
-    return { success: true, row: nextRow };
-  } catch (error) {
-    console.error('appendOrder error:', error);
-    return { success: false, message: error.message };
-  }
-}
-
-// Updates an order. It should not update the date column
-// Expects an order object that includes spreadsheetRow (1-based) and any of: pharmacyName, item, qty, status, urgent, comments
-export async function updateOrder(order, columnMapping = null) {
-  const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID;
-  const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME || 'Current';
-
-  try {
-    if (!order || typeof order !== 'object') throw new Error('Invalid order object provided for updateOrder');
-    const row = order.spreadsheetRow;
-    if (!row) throw new Error('order.spreadsheetRow is required to update order');
-
-    // If no column mapping provided, read sheet to get it
-    let ordersColumnMapping = columnMapping;
-    if (!ordersColumnMapping) {
-      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
-      const headers = data.length > 0 ? data[0] : [];
-      ordersColumnMapping = {
-        pharmacy: findColumnByHeader(headers, 'Pharmacy'),
-        item: findColumnByHeader(headers, 'Item'),
-        qty: findColumnByHeader(headers, 'Qty'),
-        urgent: findColumnByHeader(headers, 'Urgent?'),
-        status: findColumnByHeader(headers, 'Status'),
-        comments: findColumnByHeader(headers, 'Comments')
-        // Removed cost and minSupplier from updateOrder mapping
-      };
-    }
-
-    // Build updates array: { spreadsheetRow, spreadsheetCol, spreadsheetValue }
-    const updates = [];
-
-    if (order.pharmacyName !== undefined && ordersColumnMapping.pharmacy >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: ordersColumnMapping.pharmacy + 1, 
-        spreadsheetValue: order.pharmacyName 
-      });
-    }
-    
-    if (order.item !== undefined && ordersColumnMapping.item >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: ordersColumnMapping.item + 1, 
-        spreadsheetValue: order.item 
-      });
-    }
-    
-    if (order.qty !== undefined && ordersColumnMapping.qty >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: ordersColumnMapping.qty + 1, 
-        spreadsheetValue: order.qty 
-      });
-    }
-    
-    if (order.urgent !== undefined && ordersColumnMapping.urgent >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: ordersColumnMapping.urgent + 1, 
-        spreadsheetValue: order.urgent ? 'Y' : '' 
-      });
-    }
-    
-    if (order.status !== undefined && ordersColumnMapping.status >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: ordersColumnMapping.status + 1, 
-        spreadsheetValue: order.status 
-      });
-    }
-    
-    if (order.comments !== undefined && ordersColumnMapping.comments >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: ordersColumnMapping.comments + 1, 
-        spreadsheetValue: order.comments 
-      });
-    }
-
-    // Removed cost and minSupplier update logic
-
-    if (updates.length === 0) return { success: true, message: 'Nothing to update' };
-
-    const result = await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
-    return { success: true, result };
-  } catch (error) {
-    console.error('updateOrder error:', error);
-    return { success: false, message: error.message };
-  }
-}
-
-
-/**
- * Fetch stock rows for items of type 'Tender' and return usage per pharmacy.
- * @param {string} spreadsheetId - Spreadsheet to read
- * @param {Array<string>} groupPharmacyCodes - optional array of pharmacy codes to include (matches prefix before ' - Usage')
- * @returns {Promise<Array<{item: string, pharmacies: Record<string, number|null|string>}>>}
- */
-export async function fetchStock(spreadsheetId, groupPharmacyCodes = [], filterTender = true) {
-  try {
-    if (!spreadsheetId) return [];
-    const toOrderSuffix = ' - To Order';
-    const usageSuffix = ' - Usage';
-
-    const worksheetName = 'Stock';
-    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
-    if (!Array.isArray(data) || data.length < 2) return [];
-
-    // Row 1 ignored; Row 2 (index 1) contains headers
-    const headers = data[1] || [];
-    console.log('headers:', headers);
-    const prefixMap = {}
-    groupPharmacyCodes.forEach((code, idx, arr) => {
-      if (code) arr[idx] = String(code).trim();
-
-      const lookupInStockHeader = `${code}${toOrderSuffix}`;
-      const lookupUsageHeader = `${code}${usageSuffix}`;
-
-      prefixMap[code] = { inStockJsCol: headers.indexOf(lookupInStockHeader), usageJsCol: headers.indexOf(lookupUsageHeader) };
-
-    });
-
-    console.log('prefixMap:', prefixMap);
-
-    const prefixes = Object.keys(prefixMap);
-    if (prefixes.length === 0) return [];
-
-    const results = [];
-
-    // Data rows start at index 2 (skip row 0 and header row 1)
-    for (let r = 2; r < data.length; r++) {
-      const row = data[r] || [];
-      const spreadsheetRow = r + 1; // 1-based
-
-      // Column 3 is index 2
-      const typeCell = row[2] !== undefined && row[2] !== null ? String(row[2]).trim() : '';
-      if (filterTender && typeCell !== 'Tender') continue;
-
-      const item = row[1] !== undefined && row[1] !== null ? row[1] : '';
-      const pharmacies = {};
-
-      for (const prefix of prefixes) {
-        const info = prefixMap[prefix] || { inStockCol: null, usageCol: null };
-
-        const inStockCell = info.inStockJsCol !== null ? row[info.inStockJsCol] : undefined;
-        const usageCell = info.usageJsCol !== null ? row[info.usageJsCol] : undefined;
-
-        const parseCell = (cell) => {
-          if (cell === undefined || cell === null || String(cell).trim() === '') return null;
-          const maybeNum = Number(String(cell).replace(/,/g, '').trim());
-          return Number.isFinite(maybeNum) ? maybeNum : String(cell);
-        };
-
-        const inStockValue = parseCell(inStockCell);
-        const usageValue = parseCell(usageCell);
-
-        // spreadsheetCol: prefer usage column (1-based), otherwise inStock column
-        const spreadsheetCol = (info.usageCol !== null ? info.usageCol : info.inStockCol) !== null
-          ? ((info.usageCol !== null ? info.usageCol : info.inStockCol) + 1)
-          : null;
-
-        pharmacies[prefix] = { spreadsheetCol, inStockValue, usageValue };
-      }
-
-      results.push({ spreadsheetRow, item, pharmacies });
-    }
-
-    return results;
-  } catch (err) {
-    console.error('fetchStock error:', err);
-    return [];
-  }
-}
-
-// Fetch excess stock items
-export async function fetchExcessStock() {
-  try {
-    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
-    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME;
-    
-    if (!spreadsheetId || !worksheetName) {
-      console.warn('Missing excess stock spreadsheet configuration');
-      return { items: [], columnMapping: {} };
-    }
-
-    // Read entire sheet
-    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName);
-    if (!Array.isArray(data) || data.length === 0) return { items: [], columnMapping: {} };
-
-    // Get headers from row 1 (index 0) and create column mapping
-    const headers = data.length > 0 ? data[0] : [];
-    const columnMapping = {
-      dateAdded: findColumnByHeader(headers, 'Date Added'),
-      pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
-      item: findColumnByHeader(headers, 'Item'),
-      qty: findColumnByHeader(headers, 'Qty'),
-      expirationDate: findColumnByHeader(headers, 'Expiration')
-    };
-
-    const rows = data.slice(1); // Skip header row
-    const results = [];
-
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] || [];
-
-      const dateAdded = columnMapping.dateAdded >= 0 ? row[columnMapping.dateAdded] || '' : '';
-      const pharmacyName = columnMapping.pharmacyName >= 0 ? row[columnMapping.pharmacyName] || '' : '';
-      const item = columnMapping.item >= 0 ? row[columnMapping.item] || '' : '';
-      const qty = columnMapping.qty >= 0 ? row[columnMapping.qty] || '' : '';
-      const expirationDate = columnMapping.expirationDate >= 0 ? row[columnMapping.expirationDate] || '' : '';
-
-      // Skip empty rows
-      if (!item) continue;
-
-      results.push({
-        dateAdded,
-        pharmacyName,
-        item,
-        qty,
-        expirationDate,
-        spreadsheetRow: i + 2 // Add 2 to account for header row + 0-based index
-      });
-    }
-
-    // Sort by date added descending (newest first)
-    results.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
-
-    return { items: results, columnMapping };
-  } catch (error) {
-    console.error('fetchExcessStock error:', error);
-    return { items: [], columnMapping: {} };
-  }
-}
-
-// Append a single excess stock item
-export async function appendExcessStock(excessItem, columnMapping = null) {
-  try {
-    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
-    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME;
-
-    if (!spreadsheetId || !worksheetName) {
-      throw new Error('Missing excess stock spreadsheet configuration');
-    }
-
-    // If no column mapping provided, read sheet to get it
-    let excessColumnMapping = columnMapping;
-    if (!excessColumnMapping) {
-      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
-      const headers = data.length > 0 ? data[0] : [];
-      excessColumnMapping = {
-        dateAdded: findColumnByHeader(headers, 'Date Added'),
-        pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
-        item: findColumnByHeader(headers, 'Item'),
-        qty: findColumnByHeader(headers, 'Qty'),
-        expirationDate: findColumnByHeader(headers, 'Expiration')
-      };
-    }
-
-    // Read sheet to determine next row
-    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
-
-    // Use helper to find the first empty row where key columns are blank
-    const keyCols = [excessColumnMapping.dateAdded, excessColumnMapping.pharmacyName, excessColumnMapping.item]
-      .filter(col => col >= 0)
-      .map(col => col + 1); // Convert to 1-based for findFirstEmptyRow
-    
-    const nextRow = findFirstEmptyRow(data, keyCols.length > 0 ? keyCols : [1,2,3]);
-
-    // Prepare values for each column
-    const rawDate = excessItem.dateAdded !== undefined && excessItem.dateAdded !== null && excessItem.dateAdded !== '' ? excessItem.dateAdded : new Date();
-    const dateValue = formatDateForSheets(rawDate);
-
-    // Build updates array for only the columns that exist
-    const updates = [];
-    
-    if (excessColumnMapping.dateAdded >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: excessColumnMapping.dateAdded + 1, // Convert to 1-based
-        spreadsheetValue: dateValue
-      });
-    }
-    
-    if (excessColumnMapping.pharmacyName >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: excessColumnMapping.pharmacyName + 1,
-        spreadsheetValue: excessItem.pharmacyName || ''
-      });
-    }
-    
-    if (excessColumnMapping.item >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: excessColumnMapping.item + 1,
-        spreadsheetValue: excessItem.item || ''
-      });
-    }
-    
-    if (excessColumnMapping.qty >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: excessColumnMapping.qty + 1,
-        spreadsheetValue: excessItem.qty || ''
-      });
-    }
-    
-    if (excessColumnMapping.expirationDate >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: excessColumnMapping.expirationDate + 1,
-        spreadsheetValue: excessItem.expirationDate || ''
-      });
-    }
-
-    console.log('appendExcessStock updates:', updates);
-    
-    if (updates.length > 0) {
-      await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
-    }
-
-    return { success: true, row: nextRow };
-  } catch (error) {
-    console.error('appendExcessStock error:', error);
-    return { success: false, message: error.message };
-  }
-}
-
-// Update an excess stock item
-export async function updateExcessStock(excessItem, columnMapping = null) {
-  try {
-    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
-    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME;
-
-    if (!spreadsheetId || !worksheetName) {
-      throw new Error('Missing excess stock spreadsheet configuration');
-    }
-
-    if (!excessItem || typeof excessItem !== 'object') {
-      throw new Error('Invalid excess item object provided for updateExcessStock');
-    }
-    
-    const row = excessItem.spreadsheetRow;
-    if (!row) throw new Error('excessItem.spreadsheetRow is required to update excess stock item');
-
-    // If no column mapping provided, read sheet to get it
-    let excessColumnMapping = columnMapping;
-    if (!excessColumnMapping) {
-      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
-      const headers = data.length > 0 ? data[0] : [];
-      excessColumnMapping = {
-        dateAdded: findColumnByHeader(headers, 'Date Added'),
-        pharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
-        item: findColumnByHeader(headers, 'Item'),
-        qty: findColumnByHeader(headers, 'Qty'),
-        expirationDate: findColumnByHeader(headers, 'Expiration')
-      };
-    }
-
-    // Build updates array
-    const updates = [];
-
-    if (excessItem.item !== undefined && excessColumnMapping.item >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: excessColumnMapping.item + 1, 
-        spreadsheetValue: excessItem.item 
-      });
-    }
-    
-    if (excessItem.qty !== undefined && excessColumnMapping.qty >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: excessColumnMapping.qty + 1, 
-        spreadsheetValue: excessItem.qty 
-      });
-    }
-    
-    if (excessItem.expirationDate !== undefined && excessColumnMapping.expirationDate >= 0) {
-      updates.push({ 
-        spreadsheetRow: row, 
-        spreadsheetCol: excessColumnMapping.expirationDate + 1, 
-        spreadsheetValue: excessItem.expirationDate 
-      });
-    }
-
-    if (updates.length === 0) return { success: true, message: 'Nothing to update' };
-
-    const result = await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
-    return { success: true, result };
-  } catch (error) {
-    console.error('updateExcessStock error:', error);
-    return { success: false, message: error.message };
-  }
-}
-
-// Append an excess stock request
-export async function appendExcessStockRequest(requestItem, columnMapping = null) {
-  try {
-    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
-    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME;
-
-    if (!spreadsheetId || !worksheetName) {
-      throw new Error('Missing excess stock requests spreadsheet configuration');
-    }
-
-    // If no column mapping provided, read sheet to get it
-    let requestsColumnMapping = columnMapping;
-    if (!requestsColumnMapping) {
-      const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
-      const headers = data.length > 0 ? data[0] : [];
-      requestsColumnMapping = {
-        dateAdded: findColumnByHeader(headers, 'Date Added'),
-        listingPharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
-        item: findColumnByHeader(headers, 'Item'),
-        qty: findColumnByHeader(headers, 'Qty'),
-        expirationDate: findColumnByHeader(headers, 'Expiration'),
-        requestingPharmacyName: findColumnByHeader(headers, 'Requesting Pharmacy Name')
-      };
-    }
-
-    // Read sheet to determine next row
-    const data = await sheetsAPI.readSheet(spreadsheetId, worksheetName) || [];
-
-    // Use helper to find the first empty row where key columns are blank
-    const keyCols = [requestsColumnMapping.dateAdded, requestsColumnMapping.listingPharmacyName, requestsColumnMapping.item]
-      .filter(col => col >= 0)
-      .map(col => col + 1); // Convert to 1-based for findFirstEmptyRow
-    
-    const nextRow = findFirstEmptyRow(data, keyCols.length > 0 ? keyCols : [1,2,3]);
-
-    // Build updates array for only the columns that exist
-    const updates = [];
-    
-    if (requestsColumnMapping.dateAdded >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: requestsColumnMapping.dateAdded + 1,
-        spreadsheetValue: requestItem.dateAdded || ''
-      });
-    }
-    
-    if (requestsColumnMapping.listingPharmacyName >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: requestsColumnMapping.listingPharmacyName + 1,
-        spreadsheetValue: requestItem.listingPharmacyName || ''
-      });
-    }
-    
-    if (requestsColumnMapping.item >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: requestsColumnMapping.item + 1,
-        spreadsheetValue: requestItem.item || ''
-      });
-    }
-    
-    if (requestsColumnMapping.qty >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: requestsColumnMapping.qty + 1,
-        spreadsheetValue: requestItem.qty || ''
-      });
-    }
-    
-    if (requestsColumnMapping.expirationDate >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: requestsColumnMapping.expirationDate + 1,
-        spreadsheetValue: requestItem.expirationDate || ''
-      });
-    }
-
-    if (requestsColumnMapping.requestingPharmacyName >= 0) {
-      updates.push({
-        spreadsheetRow: nextRow,
-        spreadsheetCol: requestsColumnMapping.requestingPharmacyName + 1,
-        spreadsheetValue: requestItem.requestingPharmacyName || ''
-      });
-    }
-
-    console.log('appendExcessStockRequest updates:', updates);
-    
-    if (updates.length > 0) {
-      await sheetsAPI.updateCells(spreadsheetId, worksheetName, updates);
-    }
-
-    return { success: true, row: nextRow };
-  } catch (error) {
-    console.error('appendExcessStockRequest error:', error);
-    return { success: false, message: error.message };
   }
 }

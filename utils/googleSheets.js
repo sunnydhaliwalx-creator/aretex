@@ -66,7 +66,7 @@ export const getSheetData = async (spreadsheetId, worksheetName = null, range = 
     return response.data.values || [];
   } catch (error) {
     console.error(`Error getting sheet ${worksheetName} data:`, error);
-    //throw new Error(`Failed to get sheet data: ${error.message}`);
+    throw new Error(`Failed to get sheet data: ${error.message}`);
   }
 };
 

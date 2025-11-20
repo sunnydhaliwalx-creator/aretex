@@ -1,13 +1,14 @@
 import { getSheetData } from '../../utils/googleSheets';
 
-const SPREADSHEET_ID = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ID;
+const MCO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_MCO_SPREADSHEET_ID;
+const EO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_EO_SPREADSHEET_ID;
 
 // Helper: find session object for username/password in web_creds worksheet
 async function findSessionForCredentials(username, password) {
   if (!username || !password) return null;
 
   try {
-    const data = await getSheetData(SPREADSHEET_ID, 'web_creds');
+    const data = await getSheetData(MCO_SPREADSHEET_ID, 'web_creds');
     if (!Array.isArray(data) || data.length === 0) return null;
 
     for (const row of data) {
@@ -29,6 +30,10 @@ async function findSessionForCredentials(username, password) {
           if (rGroup && rPharm && rGroup === matchedGroupCode) groupSet.add(rPharmName);
         }
 
+        const file = row[0] || '';
+        const ordersSpreadsheetId = file === 'MCO' ? MCO_SPREADSHEET_ID : file === 'EO' ? EO_SPREADSHEET_ID : file;
+        const stockSpreadsheetId = row[6] || "";
+
         return {
           file: row[0] || '',
           groupCode: matchedGroupCode,
@@ -36,7 +41,8 @@ async function findSessionForCredentials(username, password) {
           pharmacyCode: (row[2] || '').toString().replace('TEST ', ''),
           pharmacyName: row[3] || '',
           username: row[4] || '',
-          spreadsheetId: row[6] || spreadsheetId,
+          ordersSpreadsheetId,
+          stockSpreadsheetId,
           stockCountColLetter: row[7] || ''
         };
       }

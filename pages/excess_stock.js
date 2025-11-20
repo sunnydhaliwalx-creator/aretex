@@ -1,7 +1,9 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchExcessStock, appendExcessStock, updateExcessStock, appendExcessStockRequest, fetchMasterInventoryItemsOptions, fetchStock } from '../utils/sheetsAPI';
+import { fetchActiveListings, createExcessStockListing, updateExcessStockListing, expressInterestInListing } from '../utils/excessStockAPI';
+import { fetchMasterInventoryItemsOptions } from '../utils/ordersAPI';
+import { fetchStock } from '../utils/stockAPI';
 
 export default function ExcessStock() {
   // State management
@@ -94,7 +96,7 @@ export default function ExcessStock() {
         setSessionData(sessJson);
 
         // Fetch excess stock items
-        const { items, columnMapping } = await fetchExcessStock();
+        const { items, columnMapping } = await fetchActiveListings();
         setExcessItems(items);
         setFilteredItems(items);
         setExcessColumnMapping(columnMapping);
@@ -104,8 +106,8 @@ export default function ExcessStock() {
         setMasterItems(masterItemsList);
 
         // Fetch usage data
-        if (session.spreadsheetId && session.pharmacyName) {
-          const usage = await fetchStock(session.spreadsheetId, [session.pharmacyName], false);
+        if (session.stockSpreadsheetId && session.pharmacyName) {
+          const usage = await fetchStock(session.stockSpreadsheetId, [session.pharmacyName], false);
           setUsageData(usage || []);
         }
 
@@ -253,7 +255,7 @@ export default function ExcessStock() {
     };
 
     try {
-      const res = await appendExcessStock(newExcessItem, excessColumnMapping);
+      const res = await createExcessStockListing(newExcessItem, excessColumnMapping);
       if (res && res.success) {
         newExcessItem.spreadsheetRow = res.row || undefined;
         setExcessItems(prev => [{ ...newExcessItem }, ...prev]);
@@ -268,7 +270,7 @@ export default function ExcessStock() {
         setShowErrorModal(true);
       }
     } catch (err) {
-      console.error('appendExcessStock failed', err);
+      console.error('createExcessStockListing failed', err);
       setErrorModalMessage(err.message || 'Error saving excess item');
       setShowErrorModal(true);
     }
@@ -293,7 +295,7 @@ export default function ExcessStock() {
         expirationDate: formatExpirationDate(editExpirationDate)
       };
 
-      const res = await updateExcessStock(itemToUpdate, excessColumnMapping);
+      const res = await updateExcessStockListing(itemToUpdate, excessColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
 
       // Update local state
@@ -343,7 +345,7 @@ export default function ExcessStock() {
         requestingPharmacyName: sessionData?.session?.pharmacyName || '' // Pharmacy making the request
       };
 
-      const res = await appendExcessStockRequest(requestItem);
+      const res = await expressInterestInListing(requestItem);
       if (res && res.success) {
         alert(`Interest registered for ${item.item} from ${item.pharmacyName}. They will be notified of your request.`);
       } else {
@@ -352,7 +354,7 @@ export default function ExcessStock() {
         setShowErrorModal(true);
       }
     } catch (err) {
-      console.error('appendExcessStockRequest failed', err);
+      console.error('expressInterestInListing failed', err);
       setErrorModalMessage(err.message || 'Error registering interest');
       setShowErrorModal(true);
     }

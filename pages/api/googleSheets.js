@@ -39,9 +39,12 @@ export default async function handler(req, res) {
     }
   } catch (error) {
     console.error('API Error:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Request body:', req.body);
     res.status(500).json({ 
       success: false, 
-      message: error.message 
+      message: error.message,
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }

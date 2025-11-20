@@ -2,7 +2,9 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchFilteredOrders, fetchMasterInventoryItemsOptions, appendOrder, updateOrder, formatDateForSheets, fetchStock } from '../utils/sheetsAPI';
+import { fetchFilteredOrders, createOrder, updateOrder, fetchMasterInventoryItemsOptions } from '../utils/ordersAPI';
+import { formatDateForSheets } from '../utils/sheetsAPI';
+import { fetchStock } from '../utils/stockAPI';
 
 export default function Orders() {
   // State management
@@ -59,8 +61,8 @@ export default function Orders() {
           if (s && s.pharmacyName) pharmacyName = s.pharmacyName;
 
           // Fetch usage data
-          if (s && s.spreadsheetId && s.groupPharmacyCodes) {
-            var usage = await fetchStock(s.spreadsheetId, [s.pharmacyName], false);             
+          if (s && s.stockSpreadsheetId && s.groupPharmacyCodes) {
+            var usage = await fetchStock(s.stockSpreadsheetId, [s.pharmacyName], false);             
             setUsageData(usage || []);
             console.log('Uage data', usage);
           }
@@ -290,13 +292,14 @@ export default function Orders() {
 
     // generate current datetime here so the UI shows it immediately
     const now = new Date();
+    const formattedDate = formatDateForSheets(now);
 
     const newOrder = {
       item: addItem,
       brand: addBrand,
       qty: parseInt(addQty, 10),
       status: defaultStatus, // Default status
-      date: now
+      date: formattedDate
     };
 
     const orderToAppend = {
@@ -308,20 +311,20 @@ export default function Orders() {
     console.log('sessionData', sessionData);
 
     try {
-      const res = await appendOrder(orderToAppend, ordersColumnMapping);
+      const res = await createOrder(orderToAppend, ordersColumnMapping);
       if (res && res.success) {
-        // capture sheet row returned by appendOrder
+        // capture sheet row returned by createOrder
         orderToAppend.spreadsheetRow = res.row || undefined;
         orderToAppend.status = defaultStatus;
       } else {
         // Append failed; show error modal and keep status as Pending
-        const msg = (res && res.message) ? res.message : 'Unknown error appending order';
+        const msg = (res && res.message) ? res.message : 'Unknown error creating order';
         setErrorModalMessage(msg);
         setShowErrorModal(true);
         orderToAppend.status = 'Pending';
       }
     } catch (err) {
-      console.error('appendOrder failed', err);
+      console.error('createOrder failed', err);
       setErrorModalMessage(err.message || 'Error saving order');
       setShowErrorModal(true);
       orderToAppend.status = defaultStatus;
@@ -603,7 +606,7 @@ export default function Orders() {
                     {order.urgent ? (
                       '✔'
                     ) : (
-                      (order.status === 'Ordered' || order.status === '') ? (
+                      (['Pending','Hold'].includes(order.status)) ? (
                         <button
                           className="btn btn-sm btn-outline-primary small py-0 px-1"
                           onClick={() => handleMarkUrgent(order)}

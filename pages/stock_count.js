@@ -2,7 +2,7 @@
 import Head from 'next/head';
 import { useState, useEffect, useRef } from 'react';
 import Modal from '../components/Modal';
-import { sheetsAPI } from '../utils/sheetsAPI';
+import { readSheet, updateCells } from '../utils/sheetsAPI';
 
 export default function StockCount() {
   // State management
@@ -61,18 +61,18 @@ export default function StockCount() {
         }
         const sessJson = await sessRes.json();
         const session = sessJson.session;
-        if (!session || !session.pharmacyName || !session.spreadsheetId) {
+        if (!session || !session.pharmacyName || !session.stockSpreadsheetId) {
           setInventoryItems(fallback);
           return;
         }
 
         console.log('Loaded session:', session);
         const pharmacyName = session.pharmacyName;
-        const spreadsheetId = session.spreadsheetId;
+        const spreadsheetId = session.stockSpreadsheetId;
         const stockCountColumnLetter = session.stockCountColLetter;
 
         // Read the Stock worksheet
-        const data = await sheetsAPI.readSheet(spreadsheetId, stockWorksheetName);
+        const data = await readSheet(spreadsheetId, stockWorksheetName);
         console.log(pharmacyName, spreadsheetId, 'Stock Sheet Data:', data);
         if (!Array.isArray(data) || data.length < 3) {
           setInventoryItems(fallback);
@@ -245,7 +245,7 @@ export default function StockCount() {
 
         if (updates.length > 0) {
           console.log('Updates to send:', updates);
-          await sheetsAPI.updateCells(spreadsheetId, stockWorksheetName, updates);
+          await updateCells(spreadsheetId, stockWorksheetName, updates);
         }
       }
 

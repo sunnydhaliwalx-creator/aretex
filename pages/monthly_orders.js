@@ -1,7 +1,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { sheetsAPI, formatDateForSheets } from '../utils/sheetsAPI';
+import { readSheet, formatDateForSheets } from '../utils/sheetsAPI';
 
 // Helper function to find column index by header name
 function findColumnByHeader(headers, headerName) {
@@ -37,17 +37,17 @@ export default function MonthlyOrders() {
         if (!sessRes.ok) throw new Error('Unable to load session');
         const sessJson = await sessRes.json();
         const session = sessJson.session;
-        if (!session || !session.spreadsheetId || !session.pharmacyName) {
-          throw new Error('No session, spreadsheetId, or pharmacyName available');
+        if (!session || !session.ordersSpreadsheetId || !session.pharmacyName) {
+          throw new Error('No session, ordersSpreadsheetId, or pharmacyName available');
         }
 
         setSessionData(sessJson);
-        const { spreadsheetId, pharmacyName } = session;
+        const { ordersSpreadsheetId, pharmacyName } = session;
 
         // Read Master worksheet
-        const data = await sheetsAPI.readSheet(spreadsheetId, 'Master');
-        if (!Array.isArray(data) || data.length < 2) {
-          throw new Error('No data found in Master worksheet');
+        const data = await readSheet(ordersSpreadsheetId, 'Master');
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error(`No data found in Master worksheet: ${ordersSpreadsheetId} > "Master" worksheet`);
         }
 
         // Get headers from first row
