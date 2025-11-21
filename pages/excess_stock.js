@@ -1,7 +1,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { fetchActiveListings, createExcessStockListing, updateExcessStockListing, expressInterestInListing } from '../utils/excessStockAPI';
+import { fetchActiveListings, createExcessStockListing, updateExcessStockListing, expressInterestInListing, fetchInterestRequests } from '../utils/excessStockAPI';
 import { fetchMasterInventoryItemsOptions } from '../utils/ordersAPI';
 import { fetchStock } from '../utils/stockAPI';
 
@@ -37,6 +37,9 @@ export default function ExcessStock() {
 
   // Usage data
   const [usageData, setUsageData] = useState([]);
+
+  // Track which items user has expressed interest in
+  const [expressedInterests, setExpressedInterests] = useState(new Set());
 
   // Format date for European display (DD/MM/YYYY) - preserve original format from spreadsheet
   const formatDateEuropean = (dateStr) => {
@@ -110,6 +113,13 @@ export default function ExcessStock() {
           const usage = await fetchStock(session.stockSpreadsheetId, [session.pharmacyName], false);
           setUsageData(usage || []);
         }
+
+        // Fetch interest requests to see what we've already expressed interest in
+        const interests = await fetchInterestRequests(session.pharmacyName);
+        const interestSet = new Set(
+          interests.map(req => `${req.listingPharmacyName}|${req.item}|${req.expirationDate}`)
+        );
+        setExpressedInterests(interestSet);
 
       } catch (err) {
         console.error('ExcessStock load error:', err);
@@ -206,13 +216,16 @@ export default function ExcessStock() {
 
   // Filter items when filter input changes
   useEffect(() => {
+    // Filter out items with qty <= 0
+    const activeItems = excessItems.filter(item => item.qty > 0);
+    
     if (!filterInput || !filterInput.trim()) {
-      setFilteredItems(excessItems);
+      setFilteredItems(activeItems);
       return;
     }
 
     const q = filterInput.trim();
-    const scored = excessItems.map((item, i) => {
+    const scored = activeItems.map((item, i) => {
       const target = `${item.item || ''} ${item.pharmacyName || ''} ${item.expirationDate || ''}`;
       return { item, score: scoreItem(q, target), index: i };
     });
@@ -241,7 +254,10 @@ export default function ExcessStock() {
     // Convert month input (YYYY-MM) to MM/YYYY format
     const formatExpirationDate = (monthValue) => {
       if (!monthValue) return '';
-      const [year, month] = monthValue.split('-');
+      const parts = monthValue.split('-');
+      if (parts.length !== 2) return monthValue; // Return as-is if not in expected format
+      const [year, month] = parts;
+      if (!year || !month) return monthValue; // Return as-is if parts are missing
       return `${month}/${year}`;
     };
 
@@ -283,7 +299,10 @@ export default function ExcessStock() {
       // Convert month input (YYYY-MM) to MM/YYYY format
       const formatExpirationDate = (monthValue) => {
         if (!monthValue) return '';
-        const [year, month] = monthValue.split('-');
+        const parts = monthValue.split('-');
+        if (parts.length !== 2) return monthValue; // Return as-is if not in expected format
+        const [year, month] = parts;
+        if (!year || !month) return monthValue; // Return as-is if parts are missing
         return `${month}/${year}`;
       };
 
@@ -317,6 +336,39 @@ export default function ExcessStock() {
     }
   };
 
+  const handleDeleteListing = async () => {
+    if (currentEditIndex === null) return;
+    
+    if (!confirm('Are you sure you want to delete this listing?')) return;
+    
+    try {
+      const targetItem = filteredItems[currentEditIndex];
+      const itemToUpdate = {
+        ...targetItem,
+        qty: 0 // Set quantity to 0 to hide the listing
+      };
+
+      const res = await updateExcessStockListing(itemToUpdate, excessColumnMapping);
+      if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to delete');
+
+      // Update local state
+      const updatedItems = excessItems.map(item => 
+        item.spreadsheetRow === targetItem.spreadsheetRow ? itemToUpdate : item
+      );
+      setExcessItems(updatedItems);
+      
+      setShowEditModal(false);
+      setEditItem('');
+      setEditQty('');
+      setEditExpirationDate('');
+      setCurrentEditIndex(null);
+    } catch (err) {
+      console.error('delete listing error', err);
+      setErrorModalMessage(err.message || 'Failed to delete listing');
+      setShowErrorModal(true);
+    }
+  };
+
   const handleEdit = (index) => {
     const item = filteredItems[index];
     setCurrentEditIndex(index);
@@ -347,6 +399,10 @@ export default function ExcessStock() {
 
       const res = await expressInterestInListing(requestItem);
       if (res && res.success) {
+        // Add to expressed interests set
+        const interestKey = `${item.pharmacyName}|${item.item}|${item.expirationDate}`;
+        setExpressedInterests(prev => new Set([...prev, interestKey]));
+        
         alert(`Interest registered for ${item.item} from ${item.pharmacyName}. They will be notified of your request.`);
       } else {
         const msg = (res && res.message) ? res.message : 'Unknown error registering interest';
@@ -358,6 +414,12 @@ export default function ExcessStock() {
       setErrorModalMessage(err.message || 'Error registering interest');
       setShowErrorModal(true);
     }
+  };
+
+  // Check if user has already expressed interest in this item
+  const hasExpressedInterest = (item) => {
+    const interestKey = `${item.pharmacyName}|${item.item}|${item.expirationDate}`;
+    return expressedInterests.has(interestKey);
   };
 
   // CSV Download function
@@ -445,6 +507,13 @@ export default function ExcessStock() {
                 onChange={(e) => setEditExpirationDate(e.target.value)}
                 required
               />
+              <button 
+                type="button" 
+                className="btn btn-danger btn-sm mt-2 py-0 px-2"
+                onClick={handleDeleteListing}
+              >
+                Delete Listing
+              </button>
             </div>
           </div>
         }
@@ -564,6 +633,7 @@ export default function ExcessStock() {
                   <tr className="text-center small">
                     <th>Date Added</th>
                     <th>Item</th>
+                    <th>Qty</th>
                     <th>Expiration</th>
                     <th>Usage</th>
                     <th>Actions</th>
@@ -574,6 +644,7 @@ export default function ExcessStock() {
                     <tr key={index} className="lh-sm">
                       <td className="text-center small">{formatDateEuropean(item.dateAdded)}</td>
                       <td>{item.item}</td>
+                      <td className="text-center">{item.qty}</td>
                       <td className="text-center small">{item.expirationDate}</td>
                       <td className="text-center">{getUsageForItem(item.item)}</td>
                       <td>
@@ -584,12 +655,14 @@ export default function ExcessStock() {
                           >
                             Edit
                           </button>
+                        ) : hasExpressedInterest(item) ? (
+                          <span className="text-success ps-1 small">Interested</span>
                         ) : (
                           <button
                             className="btn btn-sm btn-outline-success small py-0 px-2"
                             onClick={() => handleInterested(item)}
                           >
-                            Interested
+                            Express Interest
                           </button>
                         )}
                       </td>

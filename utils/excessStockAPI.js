@@ -76,6 +76,75 @@ export async function fetchActiveListings() {
 }
 
 /**
+ * Fetch all interest requests from the "Incoming Requests" worksheet.
+ * Returns items where pharmacies have expressed interest.
+ * Used to check if current pharmacy has already expressed interest in a listing.
+ * 
+ * @param {string} [requestingPharmacyName] - Filter by requesting pharmacy name
+ * @returns {Promise<Array>} Array of interest requests
+ */
+export async function fetchInterestRequests(requestingPharmacyName = null) {
+  try {
+    const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
+    const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME;
+    
+    if (!spreadsheetId || !worksheetName) {
+      console.warn('Missing excess stock requests spreadsheet configuration');
+      return [];
+    }
+
+    // Read entire sheet
+    const data = await readSheet(spreadsheetId, worksheetName);
+    if (!Array.isArray(data) || data.length === 0) return [];
+
+    // Get headers from row 1 (index 0) and create column mapping
+    const headers = data.length > 0 ? data[0] : [];
+    const columnMapping = {
+      listingDateAdded: findColumnByHeader(headers, 'Listing Date Added'),
+      listingPharmacyName: findColumnByHeader(headers, 'Listing Pharmacy Name'),
+      item: findColumnByHeader(headers, 'Item'),
+      qty: findColumnByHeader(headers, 'Qty'),
+      expirationDate: findColumnByHeader(headers, 'Expiration Date'),
+      interestedPharmacyName: findColumnByHeader(headers, 'Interested Pharmacy Name')
+    };
+
+    const rows = data.slice(1); // Skip header row
+    const results = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || [];
+
+      const listingDateAdded = columnMapping.listingDateAdded >= 0 ? row[columnMapping.listingDateAdded] || '' : '';
+      const listingPharmacyName = columnMapping.listingPharmacyName >= 0 ? row[columnMapping.listingPharmacyName] || '' : '';
+      const item = columnMapping.item >= 0 ? row[columnMapping.item] || '' : '';
+      const qty = columnMapping.qty >= 0 ? row[columnMapping.qty] || '' : '';
+      const expirationDate = columnMapping.expirationDate >= 0 ? row[columnMapping.expirationDate] || '' : '';
+      const interestedPharmacyName = columnMapping.interestedPharmacyName >= 0 ? row[columnMapping.interestedPharmacyName] || '' : '';
+
+      // Skip empty rows
+      if (!item) continue;
+
+      // Filter by requesting pharmacy if specified
+      if (requestingPharmacyName && interestedPharmacyName !== requestingPharmacyName) continue;
+
+      results.push({
+        listingDateAdded,
+        listingPharmacyName,
+        item,
+        qty,
+        expirationDate,
+        interestedPharmacyName
+      });
+    }
+
+    return results;
+  } catch (error) {
+    console.error('fetchInterestRequests error:', error);
+    return [];
+  }
+}
+
+/**
  * Create a new excess stock listing in the "Active Listings" worksheet.
  * Used when a pharmacy wants to list an item they have in excess for other pharmacies to request.
  * The listing will appear to all pharmacies in the exchange system.
@@ -292,12 +361,12 @@ export async function expressInterestInListing(requestItem, columnMapping = null
       const data = await readSheet(spreadsheetId, worksheetName) || [];
       const headers = data.length > 0 ? data[0] : [];
       requestsColumnMapping = {
-        dateAdded: findColumnByHeader(headers, 'Date Added'),
-        listingPharmacyName: findColumnByHeader(headers, 'Pharmacy Name'),
+        dateAdded: findColumnByHeader(headers, 'Listing Date Added'),
+        listingPharmacyName: findColumnByHeader(headers, 'Listing Pharmacy Name'),
         item: findColumnByHeader(headers, 'Item'),
         qty: findColumnByHeader(headers, 'Qty'),
-        expirationDate: findColumnByHeader(headers, 'Expiration'),
-        requestingPharmacyName: findColumnByHeader(headers, 'Requesting Pharmacy Name')
+        expirationDate: findColumnByHeader(headers, 'Expiration Date'),
+        requestingPharmacyName: findColumnByHeader(headers, 'Interested Pharmacy Name')
       };
     }
 

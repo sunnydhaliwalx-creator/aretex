@@ -142,6 +142,55 @@ export async function updateRange(spreadsheetId, worksheetName, range, values) {
 }
 
 /**
+ * Delete a row from Google Sheets.
+ * Permanently removes the specified row from the worksheet.
+ * 
+ * @param {string} spreadsheetId - The spreadsheet ID to delete from
+ * @param {string} worksheetName - The worksheet name to delete from
+ * @param {number} rowIndex - The 1-based row index to delete
+ * @returns {Promise<Object>} Result object with success status
+ */
+export async function deleteRow(spreadsheetId, worksheetName, rowIndex) {
+    try {
+      if (!spreadsheetId || !worksheetName || !rowIndex) {
+        throw new Error('Missing required parameters for deleteRow');
+      }
+
+      if (typeof rowIndex !== 'number' || rowIndex < 1) {
+        throw new Error('rowIndex must be a number greater than 0');
+      }
+
+      const response = await fetch('/api/googleSheets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'deleteRow',
+          spreadsheetId,
+          worksheetName,
+          rowIndex
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error deleting row:', error);
+      throw error;
+    }
+}
+
+/**
  * Find the first spreadsheet row (1-based) where all specified columns are empty.
  * Used to determine where to insert new data without overwriting existing rows.
  * 

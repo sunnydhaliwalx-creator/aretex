@@ -138,6 +138,59 @@ export const updateSheetRange = async (spreadsheetId, worksheetName, range, valu
 
 
 /**
+ * Delete a row from a Google Sheet
+ * @param {string} spreadsheetId - The Google Spreadsheet ID
+ * @param {string} worksheetName - The worksheet name
+ * @param {number} rowIndex - The 1-based row index to delete
+ * @returns {Promise<Object>} Delete response from Google Sheets API
+ */
+export const deleteSheetRow = async (spreadsheetId, worksheetName, rowIndex) => {
+  try {
+    const sheets = initializeGoogleSheets();
+    
+    // First, get the sheet ID for the worksheet name
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId,
+    });
+    
+    const sheet = spreadsheet.data.sheets.find(
+      s => s.properties.title === worksheetName
+    );
+    
+    if (!sheet) {
+      throw new Error(`Worksheet "${worksheetName}" not found`);
+    }
+    
+    const sheetId = sheet.properties.sheetId;
+    
+    // Delete the row using batchUpdate with DeleteDimensionRequest
+    const response = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex - 1, // Convert to 0-based index
+                endIndex: rowIndex // Exclusive end, so this deletes only the specified row
+              }
+            }
+          }
+        ]
+      }
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting sheet row:', error);
+    throw new Error(`Failed to delete sheet row: ${error.message}`);
+  }
+};
+
+
+/**
  * Get sheet metadata (useful for getting sheet names, properties, etc.)
  * @param {string} spreadsheetId - The Google Spreadsheet ID
  * @returns {Promise<Object>} Spreadsheet metadata

@@ -1,5 +1,5 @@
 // pages/api/googleSheets.js
-import { getSheetData, updateSheetCells, updateSheetRange, getSheetMetadata } from '../../utils/googleSheets';
+import { getSheetData, updateSheetCells, updateSheetRange, getSheetMetadata, deleteSheetRow } from '../../utils/googleSheets';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -10,7 +10,7 @@ export default async function handler(req, res) {
 
   if (!action) {
     return res.status(400).json({ 
-      message: 'Action is required. Valid actions: read, update, bulkUpdate, metadata' 
+      message: 'Action is required. Valid actions: read, update, bulkUpdate, deleteRow, metadata' 
     });
   }
 
@@ -28,13 +28,17 @@ export default async function handler(req, res) {
         await handleBulkUpdate(req, res, params);
         break;
       
+      case 'deleteRow':
+        await handleDeleteRow(req, res, params);
+        break;
+      
       case 'metadata':
         await handleMetadata(req, res, params);
         break;
       
       default:
         return res.status(400).json({ 
-          message: `Invalid action: ${action}. Valid actions: read, update, bulkUpdate, metadata` 
+          message: `Invalid action: ${action}. Valid actions: read, update, bulkUpdate, deleteRow, metadata`
         });
     }
   } catch (error) {

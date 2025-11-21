@@ -47,10 +47,10 @@ export default function Orders() {
   // Initialize orders data on component mount
   useEffect(() => {
     const load = async () => {
-      // Try fetching from Google Sheets; spreadsheet id and worksheet name provided by user request
-      const spreadsheetId = '1R97ONLxo1h6fV_v3LgdArf0HHa_FcnxSwtbzdMc1prE';
       let pharmacyCode = 'CLI';
       let pharmacyName = '';
+      let ordersSpreadsheetId = '';
+      
       try {
         const r = await fetch('/api/session');
         if (r.ok) {
@@ -59,6 +59,7 @@ export default function Orders() {
           const s = j.session;
           if (s && s.pharmacyCode) pharmacyCode = s.pharmacyCode;
           if (s && s.pharmacyName) pharmacyName = s.pharmacyName;
+          if (s && s.ordersSpreadsheetId) ordersSpreadsheetId = s.ordersSpreadsheetId;
 
           // Fetch usage data
           if (s && s.stockSpreadsheetId && s.groupPharmacyCodes) {
@@ -72,8 +73,13 @@ export default function Orders() {
         console.log('err',err)
       }
       
+      if (!ordersSpreadsheetId) {
+        console.error('No ordersSpreadsheetId available');
+        return;
+      }
+      
       // Fetch client orders
-      const { orders: rows, columnMapping } = await fetchFilteredOrders('Current', pharmacyCode);
+      const { orders: rows, columnMapping } = await fetchFilteredOrders(ordersSpreadsheetId, 'Current', pharmacyCode);
       console.log('pharmacyCode',pharmacyCode,'rows',rows);
       setOrdersColumnMapping(columnMapping);
       
@@ -265,8 +271,13 @@ export default function Orders() {
         throw new Error('Order not found in original list');
       }
       
+      const ordersSpreadsheetId = sessionData?.session?.ordersSpreadsheetId;
+      if (!ordersSpreadsheetId) {
+        throw new Error('No ordersSpreadsheetId available in session');
+      }
+      
       const orderToUpdate = { ...orders[originalIndex], status: status };
-      const res = await updateOrder(orderToUpdate, ordersColumnMapping);
+      const res = await updateOrder(ordersSpreadsheetId, orderToUpdate, ordersColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
 
       const updatedOrders = [...orders];
@@ -310,8 +321,15 @@ export default function Orders() {
     console.log('orderToAppend', orderToAppend);
     console.log('sessionData', sessionData);
 
+    const ordersSpreadsheetId = sessionData?.session?.ordersSpreadsheetId;
+    if (!ordersSpreadsheetId) {
+      setErrorModalMessage('No ordersSpreadsheetId available in session');
+      setShowErrorModal(true);
+      return;
+    }
+
     try {
-      const res = await createOrder(orderToAppend, ordersColumnMapping);
+      const res = await createOrder(ordersSpreadsheetId, orderToAppend, ordersColumnMapping);
       if (res && res.success) {
         // capture sheet row returned by createOrder
         orderToAppend.spreadsheetRow = res.row || undefined;
@@ -351,8 +369,13 @@ export default function Orders() {
         throw new Error('Order not found in original list');
       }
       
+      const ordersSpreadsheetId = sessionData?.session?.ordersSpreadsheetId;
+      if (!ordersSpreadsheetId) {
+        throw new Error('No ordersSpreadsheetId available in session');
+      }
+      
       const orderToUpdate = { ...order, urgent: true };
-      const res = await updateOrder(orderToUpdate, ordersColumnMapping);
+      const res = await updateOrder(ordersSpreadsheetId, orderToUpdate, ordersColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
       const updated = [...orders];
       updated[originalIndex] = { ...updated[originalIndex], urgent: true };
@@ -378,9 +401,14 @@ export default function Orders() {
   const handleSaveDiscrepancy = async () => {
     if (currentEditIndex === null) return setShowDiscrepancyModal(false);
     try {
+      const ordersSpreadsheetId = sessionData?.session?.ordersSpreadsheetId;
+      if (!ordersSpreadsheetId) {
+        throw new Error('No ordersSpreadsheetId available in session');
+      }
+      
       const targetOrder = orders[currentEditIndex] || {};
       const orderToUpdate = { ...targetOrder, status: 'Discrepancy', comments: discrepancyNotes };
-      const res = await updateOrder(orderToUpdate, ordersColumnMapping);
+      const res = await updateOrder(ordersSpreadsheetId, orderToUpdate, ordersColumnMapping);
       if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
       const updated = [...orders];
       updated[currentEditIndex] = { ...updated[currentEditIndex], status: 'Discrepancy' };

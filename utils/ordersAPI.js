@@ -69,13 +69,13 @@ export async function fetchMasterInventoryItemsOptions(
  * Each order includes: date, inventory item, quantity, urgent flag, status, cost, and minimum supplier.
  * Results are sorted by date descending (newest first).
  * 
+ * @param {string} spreadsheetId - The spreadsheet ID to read from
  * @param {string} [worksheetName='Current'] - The worksheet name to read from (defaults to 'Current')
  * @param {string} [pharmacy='CLI'] - The pharmacy code to filter orders by (e.g., 'CLI', 'WAT', etc.)
  * @returns {Promise<{orders: Array, columnMapping: Object}>} Object containing array of orders and column mapping
  */
-export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 'CLI') {
+export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Current', pharmacy = 'CLI') {
   try {
-    const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_MCO_SPREADSHEET_ID;
     console.log('fetchFilteredOrders',{spreadsheetId, worksheetName, pharmacy});
 
     // Read entire sheet (client helper will call /api/googleSheets)
@@ -205,9 +205,8 @@ export async function fetchFilteredOrders(worksheetName = 'Current', pharmacy = 
  * @param {Object} [columnMapping] - Optional column mapping to avoid re-reading headers
  * @returns {Promise<{success: boolean, row?: number, message?: string}>} Result of the operation
  */
-export async function createOrder(order, columnMapping = null) {
+export async function createOrder(spreadsheetId, order, columnMapping = null) {
   try {
-    const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_MCO_SPREADSHEET_ID
     const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME;
 
     // If no column mapping provided, read sheet to get it
@@ -322,6 +321,7 @@ export async function createOrder(order, columnMapping = null) {
  * Used when a pharmacy needs to modify their existing order details.
  * Note: This function does NOT update the date column - the original order date is preserved.
  * 
+ * @param {string} spreadsheetId - The spreadsheet ID to update
  * @param {Object} order - The order to update
  * @param {number} order.spreadsheetRow - The spreadsheet row number (required for identifying which order to update)
  * @param {string} [order.pharmacyName] - Updated pharmacy name
@@ -333,8 +333,7 @@ export async function createOrder(order, columnMapping = null) {
  * @param {Object} [columnMapping] - Optional column mapping to avoid re-reading headers
  * @returns {Promise<{success: boolean, result?: Object, message?: string}>} Result of the operation
  */
-export async function updateOrder(order, columnMapping = null) {
-  const spreadsheetId = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_MCO_SPREADSHEET_ID;
+export async function updateOrder(spreadsheetId, order, columnMapping = null) {
   const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME || 'Current';
 
   try {
