@@ -15,6 +15,24 @@ export default function Modal({ id, title, body, footer, onClose, sizeClassName 
     }
   };
 
+  const forceHideCleanup = () => {
+    const modalElement = document.getElementById(id);
+    if (!modalElement) return;
+
+    modalElement.style.display = 'none';
+    modalElement.classList.remove('show');
+    modalElement.setAttribute('aria-hidden', 'true');
+    modalElement.removeAttribute('aria-modal');
+    modalElement.removeAttribute('role');
+
+    const backdrop = document.querySelector('.modal-backdrop');
+    if (backdrop) {
+      backdrop.remove();
+    }
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('padding-right');
+  };
+
   // Handle React state-based visibility with Bootstrap loading check
   useEffect(() => {
     if (!useReactState) return; // Only handle if useReactState is true
@@ -50,16 +68,12 @@ export default function Modal({ id, title, body, footer, onClose, sizeClassName 
         } else {
           //console.log(`🎭 Modal ${id}: Hiding modal`);
           modal.hide();
-          
-          // Force cleanup of backdrop after a small delay
+
+          // Always force-hide after the transition to avoid getting stuck
+          // (e.g. when the modal was shown via the fallback path before Bootstrap loaded).
           setTimeout(() => {
-            const backdrop = document.querySelector('.modal-backdrop');
-            if (backdrop) {
-              //console.log(`🎭 Modal ${id}: Removing leftover backdrop`);
-              backdrop.remove();
-            }
-            document.body.classList.remove('modal-open');
-          }, 200);
+            forceHideCleanup();
+          }, 250);
         }
       } catch (error) {
         console.error(`🎭 Modal ${id}: Error handling Bootstrap modal:`, error);

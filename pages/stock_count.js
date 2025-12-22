@@ -96,11 +96,11 @@ export default function StockCount() {
         let toOrderColLetter = toOrderColIndex >= 0 ? getColumnLetterFromIndex(toOrderColIndex) : '';
         let usageColLetter = usageColIndex >= 0 ? getColumnLetterFromIndex(usageColIndex) : '';
 
-        if (stockCountColumnLetter === "") {
+        /*if (stockCountColumnLetter === "") {
           // Not found, fallback
           setInventoryItems(fallback);
           return;
-        }
+        }*/
 
         // Rows start at index 0; there are 2 header rows, so data rows start at index 2
         const results = [];
@@ -191,8 +191,8 @@ export default function StockCount() {
       if (!sessRes.ok) throw new Error('Unable to get session for saving');
       const sessJson = await sessRes.json();
       const session = sessJson.session;
-      if (!session || !session.spreadsheetId) throw new Error('No spreadsheetId in session');
-      const spreadsheetId = session.spreadsheetId;
+      if (!session || !session.stockSpreadsheetId) throw new Error('No spreadsheetId in session');
+      const spreadsheetId = session.stockSpreadsheetId;
 
       // Determine which items changed
       const changedItems = inventoryItems.filter(item => 

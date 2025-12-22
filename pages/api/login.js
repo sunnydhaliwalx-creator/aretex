@@ -31,8 +31,9 @@ async function findSessionForCredentials(username, password) {
         }
 
         const file = row[0] || '';
-        const ordersSpreadsheetId = file === 'MCO' ? MCO_SPREADSHEET_ID : file === 'EO' ? EO_SPREADSHEET_ID : file;
+        const masterOrdersSpreadsheetId = file === 'MCO' ? MCO_SPREADSHEET_ID : file === 'EO' ? EO_SPREADSHEET_ID : file;
         const stockSpreadsheetId = row[6] || "";
+        const masterOrdersWorksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME || '';
 
         return {
           file: row[0] || '',
@@ -41,9 +42,10 @@ async function findSessionForCredentials(username, password) {
           pharmacyCode: (row[2] || '').toString().replace('TEST ', ''),
           pharmacyName: row[3] || '',
           username: row[4] || '',
-          ordersSpreadsheetId,
+          masterOrdersSpreadsheetId,
+          masterOrdersWorksheetName,
           stockSpreadsheetId,
-          stockCountColLetter: row[7] || ''
+          //stockCountColLetter: row[7] || ''
         };
       }
     }

@@ -37,27 +37,39 @@ export default function MonthlyOrders() {
         if (!sessRes.ok) throw new Error('Unable to load session');
         const sessJson = await sessRes.json();
         const session = sessJson.session;
-        if (!session || !session.ordersSpreadsheetId || !session.pharmacyName) {
-          throw new Error('No session, ordersSpreadsheetId, or pharmacyName available');
+        if (!session || !session.stockSpreadsheetId || !session.pharmacyName) {
+          throw new Error('No session, stockSpreadsheetId, or pharmacyName available');
         }
 
         setSessionData(sessJson);
-        const { ordersSpreadsheetId, pharmacyName } = session;
+        const { stockSpreadsheetId, pharmacyName } = session;
 
-        // Read Master worksheet
-        const data = await readSheet(ordersSpreadsheetId, 'Master');
+        // Read Master Orders worksheet
+        const data = await readSheet(stockSpreadsheetId, 'Master');
         if (!Array.isArray(data) || data.length === 0) {
-          throw new Error(`No data found in Master worksheet: ${ordersSpreadsheetId} > "Master" worksheet`);
+          throw new Error(`No data found in Master worksheet: ${stockSpreadsheetId} > Master worksheet`);
         }
 
         // Get headers from first row
         const headers = data[0] || [];
-        const statusColIndex = findColumnByHeader(headers, 'Status');
+        console.log('Master Orders headers:', headers);
+        const statusColIndex = findColumnByHeader(headers, `${pharmacyName} - Status`);
+        const toOrderColIndex = findColumnByHeader(headers, `${pharmacyName} - To Order`);
         const itemColIndex = findColumnByHeader(headers, 'Item');
-        const ordersLogColIndex = findColumnByHeader(headers, 'Orders Log');
+        const minPriceIndex = findColumnByHeader(headers, 'Min Overall');
+        const minSupplierIndex = findColumnByHeader(headers, 'Supplier Overall');
+        const orderDateIndex = findColumnByHeader(headers, 'Date');
 
-        if (statusColIndex === -1 || itemColIndex === -1 || ordersLogColIndex === -1) {
-          throw new Error('Required columns not found: Status, Item, or Orders Log');
+        // check if all the required columns exist
+        let columnErrors = [];
+        if (statusColIndex === -1) columnErrors.push(`${pharmacyName} - Status`);
+        if (itemColIndex === -1) columnErrors.push('Item');
+        if (toOrderColIndex === -1) columnErrors.push(`${pharmacyName} - To Order`);
+        if (minPriceIndex === -1) columnErrors.push('Min Overall');
+        if (minSupplierIndex === -1) columnErrors.push('Supplier Overall');
+        if (orderDateIndex === -1) columnErrors.push('Date');
+        if (columnErrors.length > 0) {
+          throw new Error(`Required columns not found on sheet ${stockSpreadsheetId} > Master worksheet: ${columnErrors.join(', ')}`);
         }
 
         const results = [];
@@ -65,41 +77,27 @@ export default function MonthlyOrders() {
         // Process data rows (skip header row)
         for (let i = 1; i < data.length; i++) {
           const row = data[i] || [];
-          const status = row[statusColIndex];
           const item = row[itemColIndex];
-          const ordersLogRaw = row[ordersLogColIndex];
+          const status = row[statusColIndex];
+          const toOrder = row[toOrderColIndex];
+          const minPrice = row[minPriceIndex];
+          const minSupplier = row[minSupplierIndex];
+          const orderDate = row[orderDateIndex];
 
           // Only process rows with Status = "Ordered"
-
           if (!["Ordered", "Unavailable", "Over DT", "Discrepancy", "Received"].includes(status)) continue;
-          if (!item || !ordersLogRaw) continue;
+          if (!item || !toOrder) continue;
 
           try {
-            // Parse the JSON from Orders Log
-            const ordersLog = JSON.parse(ordersLogRaw);
-            
-            // Check if our pharmacy exists in the JSON
-            if (ordersLog[pharmacyName]) {
-              const pharmacyOrders = ordersLog[pharmacyName];
-              
-              // Add each order for this pharmacy to results
-              pharmacyOrders.forEach((order, orderIndex) => {
-                // Keep the original date format from the JSON (European format)
-                const originalDate = order.Date || '';
-
-                results.push({
-                  date: originalDate, // Store original date string to preserve European format
-                  item: item,
-                  ordered: order.Ordered || 0,
-                  price: order.Price || 0,
-                  supplier: order.Supplier || '',
-                  status: status, // Default status since we filtered by "Ordered"
-                  spreadsheetRow: i + 1, // 1-based row number
-                  orderIndex: orderIndex, // Index within the pharmacy's orders array
-                  ordersLogJson: ordersLogRaw // Store the full JSON string
-                });
-              });
-            }
+            results.push({
+              date: orderDate, // Store original date string to preserve European format
+              item: item,
+              ordered: toOrder || 0,
+              price: minPrice.replace('£','') || 0,
+              supplier: minSupplier || '',
+              status: status, // Default status since we filtered by "Ordered"
+              spreadsheetRow: i + 1 // 1-based row number
+            });
           } catch (parseError) {
             console.warn(`Failed to parse Orders Log for item ${item}:`, parseError);
           }
