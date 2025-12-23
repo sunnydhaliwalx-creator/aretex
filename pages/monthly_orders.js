@@ -58,8 +58,8 @@ export default function MonthlyOrders() {
         const statusColIndex = findColumnByHeader(headers, `${pharmacyName} - Status`);
         const toOrderColIndex = findColumnByHeader(headers, `${pharmacyName} - To Order`);
         const itemColIndex = findColumnByHeader(headers, 'Item');
-        const minPriceIndex = findColumnByHeader(headers, 'Min Overall');
-        const minSupplierIndex = findColumnByHeader(headers, 'Supplier Overall');
+        const minPriceIndex = findColumnByHeader(headers, 'Min - All');
+        const minSupplierIndex = findColumnByHeader(headers, 'Supplier - All');
         const orderDateIndex = findColumnByHeader(headers, 'Date');
 
         // check if all the required columns exist
@@ -67,8 +67,8 @@ export default function MonthlyOrders() {
         if (statusColIndex === -1) columnErrors.push(`${pharmacyName} - Status`);
         if (itemColIndex === -1) columnErrors.push('Item');
         if (toOrderColIndex === -1) columnErrors.push(`${pharmacyName} - To Order`);
-        if (minPriceIndex === -1) columnErrors.push('Min Overall');
-        if (minSupplierIndex === -1) columnErrors.push('Supplier Overall');
+        if (minPriceIndex === -1) columnErrors.push('Min - All');
+        if (minSupplierIndex === -1) columnErrors.push('Supplier - All');
         if (orderDateIndex === -1) columnErrors.push('Date');
         if (columnErrors.length > 0) {
           throw new Error(`Required columns not found on sheet ${spreadsheetId} > ${worksheetName} worksheet: ${columnErrors.join(', ')}`);
@@ -87,7 +87,7 @@ export default function MonthlyOrders() {
           const orderDate = row[orderDateIndex];
 
           // Only process rows with Status = "Ordered"
-          if (!["Ordered", "Unavailable", "Over DT", "Discrepancy", "Received"].includes(status)) continue;
+          if (!["Ordered", "Partial Order", "Unavailable", "Over DT", "Discrepancy", "Received"].includes(status)) continue;
           if (!item || !toOrder) continue;
 
           try {

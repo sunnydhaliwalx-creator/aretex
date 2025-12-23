@@ -27,11 +27,11 @@ export default function UsagePage() {
 					}
 
 					const spreadsheetId = session.clientSpreadsheet.spreadsheetId;
-	          		const groupPharmacyCodes = Array.isArray(session.groupPharmacyNames) && session.groupPharmacyNames.length > 0
+	          		const groupPharmacyNames = Array.isArray(session.groupPharmacyNames) && session.groupPharmacyNames.length > 0
 	          			? session.groupPharmacyNames
 	          			: [session.pharmacyName];				
-					const data = await fetchStock(spreadsheetId, groupPharmacyCodes, false);
-					console.log(spreadsheetId, groupPharmacyCodes,'Usage data', data);
+					const data = await fetchStock(spreadsheetId, groupPharmacyNames, false);
+					console.log({spreadsheetId, groupPharmacyNames, 'Usage data': data});
 					if (!mounted) return;
 					setRows(data || []);
 					setFilteredRows(data || []); // Initialize filtered rows with all data
