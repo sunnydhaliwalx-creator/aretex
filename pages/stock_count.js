@@ -20,8 +20,6 @@ export default function StockCount() {
   const isMounted = useRef(true);
   const savedTimerRef = useRef(null);
 
-  const stockWorksheetName = "Stock";
-
   // convert column index to spreadsheet column letter
   const getColumnLetterFromIndex = (index) => {
     let letter = '';
@@ -61,14 +59,15 @@ export default function StockCount() {
         }
         const sessJson = await sessRes.json();
         const session = sessJson.session;
-        if (!session || !session.pharmacyName || !session.stockSpreadsheetId) {
+        if (!session || !session.pharmacyName || !session.clientSpreadsheet?.spreadsheetId) {
           setInventoryItems(fallback);
           return;
         }
 
         console.log('Loaded session:', session);
         const pharmacyName = session.pharmacyName;
-        const spreadsheetId = session.stockSpreadsheetId;
+        const spreadsheetId = session.clientSpreadsheet.spreadsheetId;
+        const stockWorksheetName = session.clientSpreadsheet.stockWorksheetName || 'Stock';
         const stockCountColumnLetter = session.stockCountColLetter;
 
         // Read the Stock worksheet
@@ -191,8 +190,9 @@ export default function StockCount() {
       if (!sessRes.ok) throw new Error('Unable to get session for saving');
       const sessJson = await sessRes.json();
       const session = sessJson.session;
-      if (!session || !session.stockSpreadsheetId) throw new Error('No spreadsheetId in session');
-      const spreadsheetId = session.stockSpreadsheetId;
+      if (!session || !session.clientSpreadsheet?.spreadsheetId) throw new Error('No clientSpreadsheet.spreadsheetId in session');
+      const spreadsheetId = session.clientSpreadsheet.spreadsheetId;
+      const stockWorksheetName = session.clientSpreadsheet.stockWorksheetName || 'Stock';
 
       // Determine which items changed
       const changedItems = inventoryItems.filter(item => 

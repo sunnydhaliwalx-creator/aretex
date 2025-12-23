@@ -109,8 +109,8 @@ export default function ExcessStock() {
         setMasterItems(masterItemsList);
 
         // Fetch usage data
-        if (session.stockSpreadsheetId && session.pharmacyName) {
-          const usage = await fetchStock(session.stockSpreadsheetId, [session.pharmacyName], false);
+        if (session.clientSpreadsheet?.spreadsheetId && session.pharmacyName) {
+          const usage = await fetchStock(session.clientSpreadsheet.spreadsheetId, [session.pharmacyName], false);
           setUsageData(usage || []);
         }
 

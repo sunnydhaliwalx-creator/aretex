@@ -7,7 +7,7 @@ export default function Navbar() {
   const router = useRouter();
   const [pharmacyName, setPharmacyName] = useState('');
   const [hasSession, setHasSession] = useState(false);
-  const [hasStockSpreadsheetId, setHasStockSpreadsheetId] = useState(false);
+  const [hasClientSpreadsheetId, setHasClientSpreadsheetId] = useState(false);
 
   useEffect(() => {
     const loadSession = async () => {
@@ -19,19 +19,19 @@ export default function Navbar() {
         if (!s) {
           setPharmacyName('');
           setHasSession(false);
-          setHasStockSpreadsheetId(false);
+          setHasClientSpreadsheetId(false);
           console.debug('[Navbar] no server session');
           return;
         }
         setPharmacyName(s.pharmacyName || '');
         setHasSession(true);
-        setHasStockSpreadsheetId(!!s.stockSpreadsheetId);
+        setHasClientSpreadsheetId(!!s.clientSpreadsheet?.spreadsheetId);
         console.debug('[Navbar] loaded session from server', s);
       } catch (err) {
         console.debug('[Navbar] error loading session from server', err);
         setPharmacyName('');
         setHasSession(false);
-        setHasStockSpreadsheetId(false);
+        setHasClientSpreadsheetId(false);
       }
     };
 
@@ -45,17 +45,17 @@ export default function Navbar() {
           if (!newRaw) {
             setPharmacyName('');
             setHasSession(false);
-            setHasStockSpreadsheetId(false);
+            setHasClientSpreadsheetId(false);
           } else {
             const ns = JSON.parse(newRaw);
             setPharmacyName(ns.pharmacyName || '');
             setHasSession(!!ns);
-            setHasStockSpreadsheetId(!!ns.stockSpreadsheetId);
+            setHasClientSpreadsheetId(!!ns.clientSpreadsheet?.spreadsheetId);
           }
         } catch (err) {
           setPharmacyName('');
           setHasSession(false);
-          setHasStockSpreadsheetId(false);
+          setHasClientSpreadsheetId(false);
         }
       }
     };
@@ -89,7 +89,7 @@ export default function Navbar() {
       }
       setPharmacyName('');
       setHasSession(false);
-      setHasStockSpreadsheetId(false);
+      setHasClientSpreadsheetId(false);
       try { window.dispatchEvent(new Event('aretex_session_changed')); } catch (e) {}
       router.push('/login');
     })();
@@ -109,7 +109,7 @@ export default function Navbar() {
           <ul className="navbar-nav ms-auto">
             {hasSession && (
               <>
-                {hasStockSpreadsheetId && (
+                {hasClientSpreadsheetId && (
                   <>
                     <li className="nav-item">
                       <Link href="/orders" className="nav-link">Orders</Link>

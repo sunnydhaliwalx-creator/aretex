@@ -17,23 +17,26 @@ export default function UsagePage() {
 					setLoading(true);
 					setError('');
 
-          // Get session from server (contains stockSpreadsheetId and groupPharmacyCodes)
-          const sessRes = await fetch('/api/session');
-          if (!sessRes.ok) throw new Error('Unable to load session');
-          const sessJson = await sessRes.json();
-          const session = sessJson.session;
-          if (!session || !session.stockSpreadsheetId) {
-            throw new Error('No session or stockSpreadsheetId available');
-          }
+					// Get session from server (contains clientSpreadsheet.spreadsheetId and groupPharmacyNames)
+					const sessRes = await fetch('/api/session');
+					if (!sessRes.ok) throw new Error('Unable to load session');
+					const sessJson = await sessRes.json();
+					const session = sessJson.session;
+					if (!session || !session.clientSpreadsheet?.spreadsheetId) {
+						throw new Error('No session or clientSpreadsheet.spreadsheetId available');
+					}
 
-          const spreadsheetId = session.stockSpreadsheetId;
-          const groupPharmacyCodes = Array.isArray(session.groupPharmacyCodes) ? session.groupPharmacyCodes : [];				const data = await fetchStock(spreadsheetId, groupPharmacyCodes, false);
-				console.log('Usage data', data);
-				if (!mounted) return;
-				setRows(data || []);
-				setFilteredRows(data || []); // Initialize filtered rows with all data
+					const spreadsheetId = session.clientSpreadsheet.spreadsheetId;
+	          		const groupPharmacyCodes = Array.isArray(session.groupPharmacyNames) && session.groupPharmacyNames.length > 0
+	          			? session.groupPharmacyNames
+	          			: [session.pharmacyName];				
+					const data = await fetchStock(spreadsheetId, groupPharmacyCodes, false);
+					console.log(spreadsheetId, groupPharmacyCodes,'Usage data', data);
+					if (!mounted) return;
+					setRows(data || []);
+					setFilteredRows(data || []); // Initialize filtered rows with all data
 
-				// Build ordered list of pharmacy keys found across rows
+					// Build ordered list of pharmacy keys found across rows
 					const keysSet = new Set();
 					(data || []).forEach(r => {
 						if (r && r.pharmacies) {

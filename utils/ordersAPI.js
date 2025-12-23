@@ -207,7 +207,7 @@ export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Curren
  */
 export async function createOrder(spreadsheetId, order, columnMapping = null) {
   try {
-    const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME;
+    const worksheetName = process.env.NEXT_PUBLIC_ALL_CLIENTS_ORDERS_WORKSHEET_NAME;
 
     // If no column mapping provided, read sheet to get it
     let ordersColumnMapping = columnMapping;
@@ -334,7 +334,7 @@ export async function createOrder(spreadsheetId, order, columnMapping = null) {
  * @returns {Promise<{success: boolean, result?: Object, message?: string}>} Result of the operation
  */
 export async function updateOrder(spreadsheetId, order, columnMapping = null) {
-  const worksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME || 'Current';
+  const worksheetName = process.env.NEXT_PUBLIC_ALL_CLIENTS_ORDERS_WORKSHEET_NAME || 'Current';
 
   try {
     if (!order || typeof order !== 'object') throw new Error('Invalid order object provided for updateOrder');

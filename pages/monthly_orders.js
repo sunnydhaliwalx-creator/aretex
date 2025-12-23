@@ -37,17 +37,19 @@ export default function MonthlyOrders() {
         if (!sessRes.ok) throw new Error('Unable to load session');
         const sessJson = await sessRes.json();
         const session = sessJson.session;
-        if (!session || !session.stockSpreadsheetId || !session.pharmacyName) {
-          throw new Error('No session, stockSpreadsheetId, or pharmacyName available');
+        if (!session || !session.clientSpreadsheet?.spreadsheetId || !session.pharmacyName) {
+          throw new Error('No session, clientSpreadsheet.spreadsheetId, or pharmacyName available');
         }
 
         setSessionData(sessJson);
-        const { stockSpreadsheetId, pharmacyName } = session;
+        const spreadsheetId = session.clientSpreadsheet.spreadsheetId;
+        const worksheetName = session.clientSpreadsheet.ordersWorksheetName || 'Master';
+        const { pharmacyName } = session;
 
         // Read Master Orders worksheet
-        const data = await readSheet(stockSpreadsheetId, 'Master');
+        const data = await readSheet(spreadsheetId, worksheetName);
         if (!Array.isArray(data) || data.length === 0) {
-          throw new Error(`No data found in Master worksheet: ${stockSpreadsheetId} > Master worksheet`);
+          throw new Error(`No data found in worksheet: ${spreadsheetId} > ${worksheetName} worksheet`);
         }
 
         // Get headers from first row
@@ -69,7 +71,7 @@ export default function MonthlyOrders() {
         if (minSupplierIndex === -1) columnErrors.push('Supplier Overall');
         if (orderDateIndex === -1) columnErrors.push('Date');
         if (columnErrors.length > 0) {
-          throw new Error(`Required columns not found on sheet ${stockSpreadsheetId} > Master worksheet: ${columnErrors.join(', ')}`);
+          throw new Error(`Required columns not found on sheet ${spreadsheetId} > ${worksheetName} worksheet: ${columnErrors.join(', ')}`);
         }
 
         const results = [];

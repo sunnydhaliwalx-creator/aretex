@@ -1,7 +1,7 @@
 import { getSheetData } from '../../utils/googleSheets';
 
-const MCO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_MCO_SPREADSHEET_ID;
-const EO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_EO_SPREADSHEET_ID;
+const MCO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ALL_CLIENTS_MCO_SPREADSHEET_ID;
+const EO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ALL_CLIENTS_EO_SPREADSHEET_ID;
 
 // Helper: find session object for username/password in web_creds worksheet
 async function findSessionForCredentials(username, password) {
@@ -24,28 +24,34 @@ async function findSessionForCredentials(username, password) {
         const groupSet = new Set();
         for (const r of data) {
           if (!r) continue;
-          const rGroup = (r[1] || '').toString().replace('TEST ', '').trim();
-          const rPharm = (r[2] || '').toString().replace('TEST ', '').trim();
-          const rPharmName = (r[3] || '').toString().trim();
-          if (rGroup && rPharm && rGroup === matchedGroupCode) groupSet.add(rPharmName);
+          const rGroupCode = (r[1] || '').toString().replace('TEST ', '').trim();
+          const rPharmacyCode = (r[2] || '').toString().replace('TEST ', '').trim();
+          const rPharmacyName = (r[3] || '').toString().trim();
+          if (rGroupCode && rPharmacyCode && rGroupCode === matchedGroupCode) groupSet.add(rPharmacyName);
         }
 
         const file = row[0] || '';
-        const masterOrdersSpreadsheetId = file === 'MCO' ? MCO_SPREADSHEET_ID : file === 'EO' ? EO_SPREADSHEET_ID : file;
-        const stockSpreadsheetId = row[6] || "";
-        const masterOrdersWorksheetName = process.env.NEXT_PUBLIC_ACCOUNTS_GOOGLE_SPREADSHEET_ORDERS_WORKSHEET_NAME || '';
+        const allClientsOrdersSpreadsheetId = file === 'MCO' ? MCO_SPREADSHEET_ID : file === 'EO' ? EO_SPREADSHEET_ID : file;
+        const allClientsOrdersWorksheetName = process.env.NEXT_PUBLIC_ALL_CLIENTS_ORDERS_WORKSHEET_NAME || '';
+        const clientSpreadsheetId = row[6] || "";
 
         return {
           file: row[0] || '',
           groupCode: matchedGroupCode,
-          groupPharmacyCodes: Array.from(groupSet),
+          groupPharmacyNames: Array.from(groupSet),
           pharmacyCode: (row[2] || '').toString().replace('TEST ', ''),
           pharmacyName: row[3] || '',
           username: row[4] || '',
-          masterOrdersSpreadsheetId,
-          masterOrdersWorksheetName,
-          stockSpreadsheetId,
-          //stockCountColLetter: row[7] || ''
+          allClientsSpreadsheet: {
+            spreadsheetId: allClientsOrdersSpreadsheetId,
+            worksheetName: allClientsOrdersWorksheetName,
+          },
+          clientSpreadsheet: {
+            spreadsheetId: clientSpreadsheetId,
+            ordersWorksheetName: 'Master',
+            stockWorksheetName: 'Stock',
+          },
+          // stockCountColLetter: row[7] || ''
         };
       }
     }
@@ -71,7 +77,10 @@ export default async function handler(req, res) {
     const maxAge = 60 * 60 * 24 * 30; // 30 days
     const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : '';
 
-    res.setHeader('Set-Cookie', `aretex_session=${cookieValue}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax${secureFlag}`);
+    res.setHeader(
+      'Set-Cookie',
+      `aretex_session=${cookieValue}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax${secureFlag}`
+    );
 
     return res.status(200).json({ success: true, message: session });
   } catch (err) {
