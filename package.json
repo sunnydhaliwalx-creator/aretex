@@ -19,7 +19,7 @@
     "bootstrap-icons": "^1.11.1",
     "google-auth": "^0.0.1",
     "googleapis": "^159.0.0",
-    "next": "^15.0.0",
+    "next": "^16.1.1",
     "react": "18.2.0",
     "react-dom": "18.2.0"
   },
