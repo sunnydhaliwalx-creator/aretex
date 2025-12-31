@@ -47,6 +47,8 @@ To get started with the Aretex Pharmacy Management System, follow these steps:
 - **Inventory Management**: Conduct and track stock inventory counts
 - **Client Portal**: Secure access for pharmacy clients to manage their operations
 
+
+
 ## Usage
 
 Once the application is running, you can access the web interface at `http://localhost:3000`. Pharmacy staff can log in to:
