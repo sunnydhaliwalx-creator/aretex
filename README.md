@@ -47,6 +47,84 @@ To get started with the Aretex Pharmacy Management System, follow these steps:
 - **Inventory Management**: Conduct and track stock inventory counts
 - **Client Portal**: Secure access for pharmacy clients to manage their operations
 
+## Google Sheets Data Map
+
+The app reads/writes Google Sheets through the internal API route `POST /api/googleSheets` (client helpers in `utils/sheetsAPI.js`).
+
+Below is a page-by-page map of which spreadsheet/tab/columns each page interacts with.
+
+### pages/orders.js (Orders)
+
+- **Spreadsheet**: `session.allClientsSpreadsheet.spreadsheetId`
+- **Worksheet**: `session.allClientsSpreadsheet.worksheetName` (defaults to `Current`)
+- **Reads**:
+   - Columns: `Date`, `Pharmacy`, `Item`, `Qty`, `Urgent?`, `Status`, `Comments`, `Cost`, `Min Supplier`
+   - Filters: current pharmacy only (by `Pharmacy` code) and last ~12 months.
+- **Writes**:
+   - **Add Order**: appends a row and writes the columns above (notably `Urgent?` uses `Y`).
+   - **Mark Received**: updates the row’s `Status` to `Received`.
+   - **Mark Urgent** (when allowed): updates `Urgent?`.
+   - **Mark Discrepancy**: updates `Status` (and can optionally write notes if a notes/comments column is wired).
+
+### pages/monthly_orders.js (Monthly Orders)
+
+- **Spreadsheet**: `session.clientSpreadsheet.spreadsheetId`
+- **Worksheet**: `session.clientSpreadsheet.ordersWorksheetName`
+- **Reads**:
+   - Columns: `Category`, `Item`, `Date`, `Min - All`, `Supplier - All`
+   - Pharmacy-specific columns:
+      - `${pharmacyName} - Status`
+      - `${pharmacyName} - To Order`
+   - Filters: `Category = Tender` and status in `Ordered`, `Partial Order`, `Unavailable`, `Over DT`, `Discrepancy`, `Received`.
+- **Writes**:
+   - **Mark Received**: sets `${pharmacyName} - Status` on that row to `Received`.
+
+### pages/stock_count.js (Inventory Stock Count)
+
+- **Spreadsheet**: `session.clientSpreadsheet.spreadsheetId`
+- **Worksheet**: `session.clientSpreadsheet.stockWorksheetName` (defaults to `Stock`)
+- **Reads**:
+   - Header row is expected on the second row (index 1 in the fetched 2D array).
+   - Pharmacy-specific columns:
+      - `${pharmacyName} - In Stock`
+      - `${pharmacyName} - To Order Specific`
+      - `${pharmacyName} - Usage`
+   - Filters items by type: column C must be `Tender`.
+- **Writes**:
+   - Saves edits to `${pharmacyName} - In Stock`.
+   - Saves edits to `${pharmacyName} - To Order Specific` (writes `DNO`, blank, or a numeric quantity depending on toggles).
+
+### pages/usage.js (Monthly Usage)
+
+- **Spreadsheet**: `session.clientSpreadsheet.spreadsheetId`
+- **Worksheet**: `Stock` (via `utils/stockAPI.js`)
+- **Reads**:
+   - Uses header row 2 (index 1) and looks up per-pharmacy columns:
+      - `${pharmacyName} - Usage`
+      - `${pharmacyName} - To Order`
+   - Filters items by type: column C must be `Tender` (unless a caller disables filtering).
+- **Writes**: none (read-only view).
+
+> Note: `stock_count.js` and `stockAPI.js` use different per-pharmacy header names for “in stock/to order” columns (`- In Stock`, `- To Order Specific`, and `- To Order`). If you standardize the sheet headers, align both places to the same naming convention.
+
+### pages/excess_stock.js (Excess Stock)
+
+- **Spreadsheet**: `NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID`
+- **Worksheets**:
+   - Active listings: `NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME`
+   - Incoming requests: `NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME`
+- **Reads (Active Listings)**:
+   - Columns: `Date Added`, `Pharmacy Name`, `Item`, `Qty`, `Expiration`
+- **Writes (Active Listings)**:
+   - **Create listing**: appends a row and writes the columns above.
+   - **Edit listing**: updates `Item`, `Qty`, and `Expiration` for the listing row.
+- **Reads/Writes (Incoming Requests)**:
+   - Columns: `Listing Date Added`, `Listing Pharmacy Name`, `Item`, `Qty`, `Expiration Date`, `Interested Pharmacy Name`
+   - **Express interest**: appends a row in Incoming Requests.
+- **Also reads**:
+   - Master items list from the master inventory spreadsheet (see `utils/ordersAPI.js`).
+   - Usage data from the client `Stock` sheet (via `utils/stockAPI.js`).
+
 ## Usage
 
 Once the application is running, you can access the web interface at `http://localhost:3000`. Pharmacy staff can log in to:
