@@ -1,7 +1,7 @@
 import Head from 'next/head';
-import { useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import Modal from '../components/Modal';
-import { readSheet, formatDateForSheets } from '../utils/sheetsAPI';
+import { readSheet, updateCells, formatDateForSheets } from '../utils/sheetsAPI';
 
 // Helper function to find column index by header name
 function findColumnByHeader(headers, headerName) {
@@ -19,6 +19,7 @@ export default function MonthlyOrders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sessionData, setSessionData] = useState(null);
+  const statusColIndexRef = useRef(null);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorModalMessage, setErrorModalMessage] = useState('');
   const [showDiscrepancyModal, setShowDiscrepancyModal] = useState(false);
@@ -43,10 +44,11 @@ export default function MonthlyOrders() {
 
         setSessionData(sessJson);
         const spreadsheetId = session.clientSpreadsheet.spreadsheetId;
-        const worksheetName = session.clientSpreadsheet.ordersWorksheetName || 'Master';
+        const worksheetName = session.clientSpreadsheet.ordersWorksheetName;
         const { pharmacyName } = session;
 
         // Read Master Orders worksheet
+        console.log(`Loading Master Orders from ${spreadsheetId} > ${worksheetName} for pharmacy: ${pharmacyName}`);
         const data = await readSheet(spreadsheetId, worksheetName);
         if (!Array.isArray(data) || data.length === 0) {
           throw new Error(`No data found in worksheet: ${spreadsheetId} > ${worksheetName} worksheet`);
@@ -55,17 +57,19 @@ export default function MonthlyOrders() {
         // Get headers from first row
         const headers = data[0] || [];
         console.log('Master Orders headers:', headers);
+        const categoryColIndex = findColumnByHeader(headers, 'Category');
+        const itemColIndex = findColumnByHeader(headers, 'Item');
         const statusColIndex = findColumnByHeader(headers, `${pharmacyName} - Status`);
         const toOrderColIndex = findColumnByHeader(headers, `${pharmacyName} - To Order`);
-        const itemColIndex = findColumnByHeader(headers, 'Item');
         const minPriceIndex = findColumnByHeader(headers, 'Min - All');
         const minSupplierIndex = findColumnByHeader(headers, 'Supplier - All');
         const orderDateIndex = findColumnByHeader(headers, 'Date');
 
         // check if all the required columns exist
         let columnErrors = [];
-        if (statusColIndex === -1) columnErrors.push(`${pharmacyName} - Status`);
         if (itemColIndex === -1) columnErrors.push('Item');
+        if (categoryColIndex === -1) columnErrors.push('Category');
+        if (statusColIndex === -1) columnErrors.push(`${pharmacyName} - Status`);
         if (toOrderColIndex === -1) columnErrors.push(`${pharmacyName} - To Order`);
         if (minPriceIndex === -1) columnErrors.push('Min - All');
         if (minSupplierIndex === -1) columnErrors.push('Supplier - All');
@@ -74,12 +78,16 @@ export default function MonthlyOrders() {
           throw new Error(`Required columns not found on sheet ${spreadsheetId} > ${worksheetName} worksheet: ${columnErrors.join(', ')}`);
         }
 
+        // Keep for later write-backs (e.g., Mark Received)
+        statusColIndexRef.current = statusColIndex;
+
         const results = [];
 
         // Process data rows (skip header row)
         for (let i = 1; i < data.length; i++) {
           const row = data[i] || [];
           const item = row[itemColIndex];
+          const category = row[categoryColIndex];
           const status = row[statusColIndex];
           const toOrder = row[toOrderColIndex];
           const minPrice = row[minPriceIndex];
@@ -89,6 +97,8 @@ export default function MonthlyOrders() {
           // Only process rows with Status = "Ordered"
           if (!["Ordered", "Partial Order", "Unavailable", "Over DT", "Discrepancy", "Received"].includes(status)) continue;
           if (!item || !toOrder) continue;
+
+          if (category && category.toString().toLowerCase() !== 'tender') continue;
 
           try {
             results.push({
@@ -165,11 +175,42 @@ export default function MonthlyOrders() {
     setFilterInput(e.target.value);
   };
 
-  const handleMarkReceived = async (order, index) => {
-    // TODO: Implement mark received logic
-    // This would need to update the JSON in the Orders Log column
-    console.log('Mark received:', order);
-    alert('Mark Received functionality needs to be implemented');
+  const handleMarkReceived = async (order) => {
+    try {
+      const session = sessionData?.session;
+      const spreadsheetId = session?.clientSpreadsheet?.spreadsheetId;
+      const worksheetName = session?.clientSpreadsheet?.ordersWorksheetName;
+      const pharmacyName = session?.pharmacyName;
+
+      if (!spreadsheetId || !worksheetName || !pharmacyName) {
+        throw new Error('Missing session spreadsheetId, worksheetName, or pharmacyName');
+      }
+
+      const row = order?.spreadsheetRow;
+      if (!row) throw new Error('Missing spreadsheetRow for this order');
+
+      const statusColIndex = statusColIndexRef.current;
+      if (typeof statusColIndex !== 'number' || statusColIndex < 0) {
+        throw new Error(`Unable to locate column "${pharmacyName} - Status" for write-back`);
+      }
+
+      await updateCells(spreadsheetId, worksheetName, [
+        {
+          spreadsheetRow: row,
+          spreadsheetCol: statusColIndex + 1, // updateCells expects 1-based column index
+          spreadsheetValue: 'Received'
+        }
+      ]);
+
+      // Update local state so UI reflects immediately
+      setOrders(prev => prev.map(o => (
+        o.spreadsheetRow === row ? { ...o, status: 'Received' } : o
+      )));
+    } catch (err) {
+      console.error('handleMarkReceived error', err);
+      setErrorModalMessage(err?.message || 'Failed to mark received');
+      setShowErrorModal(true);
+    }
   };
 
   const handleMarkDiscrepancy = (index) => {
@@ -324,7 +365,7 @@ export default function MonthlyOrders() {
                 </thead>
                 <tbody>
                   {filteredOrders.map((order, index) => (
-                    <tr key={index} className="lh-sm" data-orders-log={order.ordersLogJson}>
+                    <tr key={index} className="lh-sm" data-orders-log={order.ordersLogJson} data-spreadsheet-row={order.spreadsheetRow}>
                       <td className="text-center small">{order.date}</td>
                       <td>{order.item}</td>
                       <td className="text-center">{order.ordered}</td>
@@ -336,7 +377,7 @@ export default function MonthlyOrders() {
                           <>
                             <button
                               className="btn btn-sm btn-outline-success small py-0 px-2 me-1"
-                              onClick={() => handleMarkReceived(order, index)}
+                              onClick={() => handleMarkReceived(order)}
                             >
                               Mark Received
                             </button>

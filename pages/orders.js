@@ -82,7 +82,7 @@ export default function Orders() {
       
       // Fetch client orders
       const { orders: rows, columnMapping } = await fetchFilteredOrders(allClientsOrdersSpreadsheetId, allClientsOrdersWorksheetName, pharmacyCode);
-      console.log('pharmacyCode',pharmacyCode,'rows',rows);
+      console.log({allClientsOrdersSpreadsheetId,pharmacyCode},'rows',rows);
       setOrdersColumnMapping(columnMapping);
       
       // Fetch master items
