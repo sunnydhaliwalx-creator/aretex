@@ -72,12 +72,14 @@ Below is a page-by-page map of which spreadsheet/tab/columns each page interacts
 - **Worksheet**: `session.clientSpreadsheet.ordersWorksheetName`
 - **Reads**:
    - Columns: `Category`, `Item`, `Date`, `Min - All`, `Supplier - All`
+   - Shared notes column: `Comments`
    - Pharmacy-specific columns:
       - `${pharmacyName} - Status`
       - `${pharmacyName} - To Order`
    - Filters: `Category = Tender` and status in `Ordered`, `Partial Order`, `Unavailable`, `Over DT`, `Discrepancy`, `Received`.
 - **Writes**:
    - **Mark Received**: sets `${pharmacyName} - Status` on that row to `Received`.
+   - **Mark Discrepancy**: sets `${pharmacyName} - Status` on that row to `Discrepancy` and writes the modal notes into `Comments`.
 
 ### pages/stock_count.js (Inventory Stock Count)
 

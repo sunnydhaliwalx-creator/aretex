@@ -11,6 +11,15 @@ function findColumnByHeader(headers, headerName) {
   );
 }
 
+function findFirstColumnByHeaders(headers, headerNames) {
+  if (!Array.isArray(headerNames)) return -1;
+  for (const name of headerNames) {
+    const idx = findColumnByHeader(headers, name);
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
 export default function MonthlyOrders() {
   // State management
   const [orders, setOrders] = useState([]);
@@ -20,6 +29,7 @@ export default function MonthlyOrders() {
   const [error, setError] = useState('');
   const [sessionData, setSessionData] = useState(null);
   const statusColIndexRef = useRef(null);
+  const commentsColIndexRef = useRef(null);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorModalMessage, setErrorModalMessage] = useState('');
   const [showDiscrepancyModal, setShowDiscrepancyModal] = useState(false);
@@ -60,6 +70,7 @@ export default function MonthlyOrders() {
         const categoryColIndex = findColumnByHeader(headers, 'Category');
         const itemColIndex = findColumnByHeader(headers, 'Item');
         const statusColIndex = findColumnByHeader(headers, `${pharmacyName} - Status`);
+        const commentsColIndex = findColumnByHeader(headers, 'Comments');
         const toOrderColIndex = findColumnByHeader(headers, `${pharmacyName} - To Order`);
         const minPriceIndex = findColumnByHeader(headers, 'Min - All');
         const minSupplierIndex = findColumnByHeader(headers, 'Supplier - All');
@@ -80,6 +91,7 @@ export default function MonthlyOrders() {
 
         // Keep for later write-backs (e.g., Mark Received)
         statusColIndexRef.current = statusColIndex;
+        commentsColIndexRef.current = commentsColIndex;
 
         const results = [];
 
@@ -222,10 +234,49 @@ export default function MonthlyOrders() {
     if (currentEditIndex === null) return setShowDiscrepancyModal(false);
     
     try {
-      // TODO: Implement discrepancy logic
-      // This would need to update the JSON in the Orders Log column
-      console.log('Mark discrepancy:', filteredOrders[currentEditIndex], 'Notes:', discrepancyNotes);
-      alert('Mark Discrepancy functionality needs to be implemented');
+      const session = sessionData?.session;
+      const spreadsheetId = session?.clientSpreadsheet?.spreadsheetId;
+      const worksheetName = session?.clientSpreadsheet?.ordersWorksheetName;
+      const pharmacyName = session?.pharmacyName;
+
+      if (!spreadsheetId || !worksheetName || !pharmacyName) {
+        throw new Error('Missing session spreadsheetId, worksheetName, or pharmacyName');
+      }
+
+      const order = filteredOrders[currentEditIndex];
+      if (!order) throw new Error('Order not found');
+
+      const row = order?.spreadsheetRow;
+      if (!row) throw new Error('Missing spreadsheetRow for this order');
+
+      const statusColIndex = statusColIndexRef.current;
+      if (typeof statusColIndex !== 'number' || statusColIndex < 0) {
+        throw new Error(`Unable to locate column "${pharmacyName} - Status" for write-back`);
+      }
+
+      const updates = [
+        {
+          spreadsheetRow: row,
+          spreadsheetCol: statusColIndex + 1,
+          spreadsheetValue: 'Discrepancy'
+        }
+      ];
+
+      const notesColIndex = commentsColIndexRef.current;
+      if (typeof notesColIndex === 'number' && notesColIndex >= 0) {
+        updates.push({
+          spreadsheetRow: row,
+          spreadsheetCol: notesColIndex + 1,
+          spreadsheetValue: (discrepancyNotes || '').toString().trim()
+        });
+      }
+
+      await updateCells(spreadsheetId, worksheetName, updates);
+
+      // Update local state so UI reflects immediately
+      setOrders(prev => prev.map(o => (
+        o.spreadsheetRow === row ? { ...o, status: 'Discrepancy' } : o
+      )));
     } catch (err) {
       console.error('discrepancy save error', err);
       setErrorModalMessage(err.message || 'Failed to save discrepancy');
