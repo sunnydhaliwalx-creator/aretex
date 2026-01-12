@@ -1122,16 +1122,16 @@ body {
     font-size: 1.5rem;
 }
 
-.nav-link {
+.navbar .nav-link {
     font-weight: 500;
     transition: color 0.2s ease;
 }
 
-.nav-link:hover {
+.navbar .nav-link:hover {
     color: rgba(255, 255, 255, 0.8) !important;
 }
 
-.nav-link.active {
+.navbar .nav-link.active {
     color: #fff !important;
     background-color: rgba(255, 255, 255, 0.1);
     border-radius: 4px;
@@ -1143,22 +1143,6 @@ body {
     padding: 0.5rem 1.5rem;
     border-radius: 6px;
     transition: all 0.2s ease;
-}
-
-.btn-primary {
-    background: linear-gradient(135deg, #0d6efd 0%, #0056b3 100%);
-    border: none;
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-}
-
-.btn-primary:hover {
-    background: linear-gradient(135deg, #0056b3 0%, #004085 100%);
-    background-color: var(--primary-light);
-    border-color: var(--primary-light);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(13, 110, 253, 0.3);
-    color: white;
 }
 
 /* Form styling */
