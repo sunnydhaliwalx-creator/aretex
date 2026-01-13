@@ -1,7 +1,7 @@
 import Head from 'next/head';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Modal from '../components/Modal';
-import { fetchActiveListings, createExcessStockListing, updateExcessStockListing, expressInterestInListing, fetchInterestRequests, updateInterestRequestStatus } from '../utils/excessStockAPI';
+import { fetchListings, createExcessStockListing, updateExcessStockListing, submitOffer, fetchOffers, updateOfferStatus } from '../utils/excessStockAPI';
 import { fetchMasterInventoryItemsOptions } from '../utils/ordersAPI';
 import { fetchStock } from '../utils/stockAPI';
 
@@ -55,6 +55,15 @@ export default function ExcessStock() {
 
   // Pharmacy directory (contact details) looked up from web_creds via API
   const [pharmacyDetailsByName, setPharmacyDetailsByName] = useState({});
+
+  const pharmacyDetailsByNameLower = useMemo(() => {
+    const map = new Map();
+    for (const [name, details] of Object.entries(pharmacyDetailsByName || {})) {
+      if (!name) continue;
+      map.set(String(name).trim().toLowerCase(), details);
+    }
+    return map;
+  }, [pharmacyDetailsByName]);
 
   const normalizeStatusValue = (value) => (value || '').toString().trim().toLowerCase();
 
@@ -117,8 +126,8 @@ export default function ExcessStock() {
 
         // Fetch Listings + Offers + Master Items (independent reads)
         const [{ items, columnMapping }, allOffers, masterItemsList] = await Promise.all([
-          fetchActiveListings(),
-          fetchInterestRequests(),
+          fetchListings(),
+          fetchOffers(),
           fetchMasterInventoryItemsOptions(),
         ]);
 
@@ -145,6 +154,30 @@ export default function ExcessStock() {
   }, []);
 
   const currentPharmacyName = sessionData?.session?.pharmacyName || '';
+
+  const acceptedQtyByListingId = useMemo(() => {
+    const map = new Map();
+    for (const offer of (offers || [])) {
+      if (!offer) continue;
+      if (normalizeStatusValue(offer.status) !== 'accepted') continue;
+      const listingId = offer.listingId;
+      if (!listingId) continue;
+      const qty = Number(offer.qtyInterestedIn);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      const key = String(listingId);
+      map.set(key, (map.get(key) || 0) + qty);
+    }
+    return map;
+  }, [offers]);
+
+  const getRemainingQtyForListing = useCallback((listing) => {
+    const listedQty = Number(listing?.qty);
+    if (!Number.isFinite(listedQty) || listedQty <= 0) return 0;
+    const key = String(listing?.listingId || '');
+    const acceptedQty = key ? (acceptedQtyByListingId.get(key) || 0) : 0;
+    const remaining = listedQty - acceptedQty;
+    return remaining > 0 ? remaining : 0;
+  }, [acceptedQtyByListingId]);
 
   // Derived views over the canonical datasets
   const myListingIds = useMemo(() => {
@@ -177,6 +210,12 @@ export default function ExcessStock() {
   useEffect(() => {
     const loadNeededContacts = async () => {
       try {
+        const listingNameById = new Map(
+          (excessItems || [])
+            .filter(it => it && it.listingId)
+            .map(it => [String(it.listingId), (it.pharmacyName || '').toString().trim()])
+        );
+
         const neededNames = new Set();
 
         // For each accepted offer, we may need contact details for both parties.
@@ -184,13 +223,20 @@ export default function ExcessStock() {
           if (!offer) continue;
           if (normalizeStatusValue(offer.status) !== 'accepted') continue;
 
-          const listingName = (offer.listingPharmacyName || '').toString().trim();
+          const listingNameFromOffer = (offer.listingPharmacyName || '').toString().trim();
+          const listingNameFromListing = offer.listingId ? (listingNameById.get(String(offer.listingId)) || '') : '';
+          const listingName = listingNameFromOffer || listingNameFromListing;
           const interestedName = (offer.interestedPharmacyName || '').toString().trim();
           if (listingName) neededNames.add(listingName);
           if (interestedName) neededNames.add(interestedName);
         }
 
-        const toFetch = Array.from(neededNames).filter(name => name && !pharmacyDetailsByName[name]);
+        const toFetch = Array.from(neededNames).filter(name => {
+          if (!name) return false;
+          if (pharmacyDetailsByName[name]) return false;
+          if (pharmacyDetailsByNameLower.has(String(name).trim().toLowerCase())) return false;
+          return true;
+        });
         if (toFetch.length === 0) return;
 
         for (const name of toFetch) {
@@ -212,7 +258,7 @@ export default function ExcessStock() {
     };
 
     loadNeededContacts();
-  }, [offers, pharmacyDetailsByName]);
+  }, [offers, pharmacyDetailsByName, pharmacyDetailsByNameLower, excessItems]);
 
   // Simple fuzzy scoring for filtering and autocomplete
   const scoreItem = (query, target) => {
@@ -300,8 +346,8 @@ export default function ExcessStock() {
   useEffect(() => {
     const currentPharmacy = sessionData?.session?.pharmacyName || '';
 
-    // Filter out items with qty <= 0, then keep only Others' listings
-    const activeItems = excessItems.filter(item => item.qty > 0);
+    // Filter out items with remaining qty <= 0 (listed qty minus accepted offers), then keep only Others' listings
+    const activeItems = excessItems.filter(item => getRemainingQtyForListing(item) > 0);
     const others = activeItems.filter(item => item.pharmacyName !== currentPharmacy);
 
     if (!filterInput || !filterInput.trim()) {
@@ -321,7 +367,7 @@ export default function ExcessStock() {
       .map(s => s.item);
 
     setOtherFilteredItems(top);
-  }, [filterInput, excessItems, sessionData]);
+  }, [filterInput, excessItems, sessionData, getRemainingQtyForListing]);
 
   const handleFilterChange = (e) => {
     setFilterInput(e.target.value);
@@ -485,7 +531,7 @@ export default function ExcessStock() {
   const openInterestModal = (item) => {
     if (!item) return;
     setInterestListing(item);
-    const maxQty = Number(item.qty) || 0;
+    const maxQty = getRemainingQtyForListing(item);
     setInterestQty(maxQty > 0 ? String(maxQty) : '');
 
     const rawPrice = item?.price ?? '';
@@ -502,7 +548,8 @@ export default function ExcessStock() {
       const offerPriceNum = Number(String(requestedOfferPrice ?? '').trim());
       if (!item) throw new Error('Missing listing');
       if (!Number.isFinite(qtyNum) || qtyNum <= 0) throw new Error('Please enter a valid quantity.');
-      if (item.qty && qtyNum > item.qty) throw new Error(`Requested quantity cannot exceed available quantity (${item.qty}).`);
+      const remainingQty = getRemainingQtyForListing(item);
+      if (remainingQty && qtyNum > remainingQty) throw new Error(`Requested quantity cannot exceed available quantity (${remainingQty}).`);
       if (String(requestedOfferPrice ?? '').trim() === '') throw new Error('Please enter a valid offer price.');
       if (!Number.isFinite(offerPriceNum) || offerPriceNum < 0) throw new Error('Please enter a valid offer price.');
 
@@ -511,8 +558,8 @@ export default function ExcessStock() {
         dateAdded: item.dateAdded,
         listingPharmacyName: item.pharmacyName, // Pharmacy that listed the item
         item: item.item,
-        qty: item.qty, // listing qty
-        listingQty: item.qty,
+        qty: remainingQty, // listing qty at time of offer (remaining)
+        listingQty: remainingQty,
         expirationDate: item.expirationDate,
         requestingPharmacyName: sessionData?.session?.pharmacyName || '', // Pharmacy making the request
         requestingPharmacyTown: sessionData?.session?.town || '',
@@ -520,7 +567,7 @@ export default function ExcessStock() {
         offerPrice: offerPriceNum
       };
 
-      const res = await expressInterestInListing(requestItem);
+      const res = await submitOffer(requestItem);
       if (res && res.success) {
         // Keep canonical offers list in sync without a refresh
         setOffers(prev => ([
@@ -530,7 +577,7 @@ export default function ExcessStock() {
             listingDateAdded: item.dateAdded,
             listingPharmacyName: item.pharmacyName,
             item: item.item,
-            qty: item.qty,
+            qty: remainingQty,
             expirationDate: item.expirationDate,
             interestedPharmacyName: sessionData?.session?.pharmacyName || '',
             interestedPharmacyTown: sessionData?.session?.town || '',
@@ -555,7 +602,7 @@ export default function ExcessStock() {
         setShowErrorModal(true);
       }
     } catch (err) {
-      console.error('expressInterestInListing failed', err);
+      console.error('submitOffer failed', err);
       setErrorModalMessage(err.message || 'Error registering interest');
       setShowErrorModal(true);
     }
@@ -602,8 +649,8 @@ export default function ExcessStock() {
   const otherListingsCount = otherFilteredItems.length;
 
   const activeItems = useMemo(() => {
-    return (excessItems || []).filter(item => item && Number(item.qty) > 0);
-  }, [excessItems]);
+    return (excessItems || []).filter(item => item && getRemainingQtyForListing(item) > 0);
+  }, [excessItems, getRemainingQtyForListing]);
 
   const myListings = useMemo(() => {
     return activeItems.filter(item => item.pharmacyName === currentPharmacyName);
@@ -728,14 +775,14 @@ export default function ExcessStock() {
   const handleOfferStatus = async (requestRow, statusValue) => {
     if (!requestRow) return;
     try {
-      const res = await updateInterestRequestStatus(requestRow, statusValue);
+      const res = await updateOfferStatus(requestRow, statusValue);
       if (!res || !res.success) throw new Error(res?.message || 'Failed to update status');
 
       setOffers(prev => (prev || []).map(r =>
         r && r.spreadsheetRow === requestRow ? { ...r, status: statusValue } : r
       ));
     } catch (err) {
-      console.error('updateInterestRequestStatus failed', err);
+      console.error('updateOfferStatus failed', err);
       setErrorModalMessage(err.message || 'Failed to update offer status');
       setShowErrorModal(true);
     }
@@ -745,13 +792,13 @@ export default function ExcessStock() {
     const name = (pharmacyName || '').toString().trim();
     if (!name) return '';
 
-    const details = pharmacyDetailsByName[name];
+    const details = pharmacyDetailsByName[name] || pharmacyDetailsByNameLower.get(name.toLowerCase());
     if (!details) return '';
 
     const email = (details.email || '').toString().trim();
     const phone = (details.phone || '').toString().trim();
     return [email, phone].filter(Boolean).join('\n');
-  }, [pharmacyDetailsByName]);
+  }, [pharmacyDetailsByName, pharmacyDetailsByNameLower]);
 
   const joinNotes = useCallback((...parts) => {
     return (parts || []).filter(s => s && String(s).trim()).join('\n');
@@ -873,7 +920,7 @@ export default function ExcessStock() {
 
                   if (next < 0) next = 0;
 
-                  const maxAllowed = Number(interestListing?.qty) || 0;
+                  const maxAllowed = getRemainingQtyForListing(interestListing);
                   if (maxAllowed > 0 && next > maxAllowed) next = maxAllowed;
 
                   setInterestQty(String(next));
@@ -929,7 +976,7 @@ export default function ExcessStock() {
                 if (!interestQty) return true;
                 const qtyNum = parseInt(interestQty, 10);
                 if (!Number.isFinite(qtyNum) || qtyNum <= 0) return true;
-                const maxAllowed = Number(interestListing?.qty) || 0;
+                const maxAllowed = getRemainingQtyForListing(interestListing);
                 if (maxAllowed > 0 && qtyNum > maxAllowed) return true;
 
                 if (!interestOfferPrice) return true;
@@ -1054,7 +1101,7 @@ export default function ExcessStock() {
                               >
                                 <td className="text-center small">{formatDateEuropean(item.dateAdded)}</td>
                                 <td>{item.item}</td>
-                                <td className="text-center">{item.qty}</td>
+                                <td className="text-center">{getRemainingQtyForListing(item)}</td>
                                 <td className="text-center small">{formatPriceGBP(item.price)}</td>
                                 <td className="text-center small">{item.expirationDate}</td>
                                 <td className="text-center small">{item.pharmacyName || ''}</td>
@@ -1097,7 +1144,8 @@ export default function ExcessStock() {
                               <th>Listing Pharmacy</th>
                               <th>Pharmacy Town</th>
                               <th>Delivery <br />Included?</th>
-                              <th>Usage</th>
+                              <th>Offer Qty</th>
+                              <th>Offer Price</th>
                               <th>Status</th>
                               <th>Notes</th>
                             </tr>
@@ -1112,6 +1160,9 @@ export default function ExcessStock() {
                               const listingPharmacyName = (offer?.listingPharmacyName || '').toString().trim() || (listing?.pharmacyName || '').toString().trim();
                               const listingTown = listing?.pharmacyTown ?? '';
                               const listingDelivery = listing?.deliveryAvailable;
+
+                              const offerQty = offer?.qtyInterestedIn ?? '';
+                              const offerPrice = offer?.offerPrice ?? '';
 
                               const listingIdAttr = offer?.listingId ?? listing?.listingId ?? '';
 
@@ -1135,9 +1186,13 @@ export default function ExcessStock() {
                                   <td className="text-center small">{listingPharmacyName}</td>
                                   <td className="text-center small">{listingTown}</td>
                                   <td className={`text-center small ${listingDelivery ? 'text-success' : 'text-danger'}`}>{listingDelivery ? 'Yes' : 'No'}</td>
-                                  <td className="text-center">{getUsageForItem(itemName)}</td>
-                                  <td className={`text-center small ${statusNorm === 'accepted' ? 'text-success' : statusNorm === 'rejected' ? 'text-danger' : ''}`}>{offer?.status || ''}</td>
-                                  <td className="small" style={{ whiteSpace: 'pre-line' }}>{notesText}</td>
+                                  <td className="text-center small">{offerQty}</td>
+                                  <td className="text-center small">{formatPriceGBP(offerPrice)}</td>
+                                  <td className="text-center small">
+                                    <span className={`fw-bolder fs-90 ${statusNorm === 'accepted' ? 'text-success' : statusNorm === 'rejected' ? 'text-danger' : ''}`}>{offer?.status || ''}</span><br />
+                                    <span className="fs-75 text-secondary">{offer?.statusDate ? formatDateEuropean(offer.statusDate) : ''}</span>
+                                  </td>
+                                  <td className="text-secondary fs-75" style={{ whiteSpace: 'pre-line' }}>{notesText}</td>
                                 </tr>
                               );
                             })}
@@ -1263,7 +1318,6 @@ export default function ExcessStock() {
                               <th>Expiration</th>
                               <th>Delivery <br />Included?</th>
                               <th>Internal <br />Only?</th>
-                              <th>Usage</th>
                               <th>Offers</th>
                               <th>Actions</th>
                             </tr>
@@ -1282,12 +1336,11 @@ export default function ExcessStock() {
                                 >
                                   <td className="text-center small">{formatDateEuropean(item.dateAdded)}</td>
                                   <td>{item.item}</td>
-                                  <td className="text-center">{item.qty}</td>
+                                  <td className="text-center">{getRemainingQtyForListing(item)}</td>
                                   <td className="text-center small">{formatPriceGBP(item.price)}</td>
                                   <td className="text-center small">{item.expirationDate}</td>
                                   <td className={`text-center small ${item.deliveryAvailable ? 'text-success' : 'text-danger'}`}>{item.deliveryAvailable ? 'Yes' : 'No'}</td>
                                   <td className={`text-center small ${item.internalOnly ? 'text-success' : 'text-danger'}`}>{item.internalOnly ? 'Yes' : 'No'}</td>
-                                  <td className="text-center">{getUsageForItem(item.item)}</td>
                                   <td className="text-center"><span className="small">{offersCount}</span></td>
                                   <td>
                                     <button
@@ -1333,6 +1386,7 @@ export default function ExcessStock() {
                             {receivedOffersRowsEnriched.map((offer, i) => {
                               const st = normalizeStatusValue(offer?.status);
                               const itemName = offer?._listingItem || '';
+                              const statusNorm = normalizeStatusValue(offer?.status);
                               const baseNotes = (offer?.notes || '').toString().trim();
                               const contact = st === 'accepted' ? getContactLinesForPharmacyName(offer?.interestedPharmacyName) : '';
                               const notesText = joinNotes(baseNotes, contact);
@@ -1372,10 +1426,13 @@ export default function ExcessStock() {
                                         </button>
                                       </>
                                     ) : (
-                                      <span className={st === 'accepted' ? 'text-success' : 'text-danger'}>{offer?.status || ''}</span>
+                                      <>
+                                        <span className={`fw-bolder fs-90 ${statusNorm === 'accepted' ? 'text-success' : statusNorm === 'rejected' ? 'text-danger' : ''}`}>{offer?.status || ''}</span><br />
+                                        <span className="fs-75 text-secondary">{offer?.statusDate ? formatDateEuropean(offer.statusDate) : ''}</span>
+                                      </>
                                     )}
                                   </td>
-                                  <td className="small" style={{ whiteSpace: 'pre-line' }}>{notesText}</td>
+                                  <td className="text-secondary fs-75" style={{ whiteSpace: 'pre-line' }}>{notesText}</td>
                                 </tr>
                               );
                             })}

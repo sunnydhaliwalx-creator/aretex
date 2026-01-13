@@ -62,13 +62,13 @@ function generateListingId() {
 }
 
 /**
- * Fetch all active excess stock listings from the "Active Listings" worksheet.
+ * Fetch all excess stock listings from the "Listings" worksheet.
  * Returns items that pharmacies have listed as available for exchange with other pharmacies.
  * Each listing includes: date added, pharmacy name (who listed it), item name, quantity, and expiration date.
- * 
- * @returns {Promise<{items: Array, columnMapping: Object}>} Object containing array of active listings and column mapping
+ *
+ * @returns {Promise<{items: Array, columnMapping: Object}>} Object containing array of listings and column mapping
  */
-export async function fetchActiveListings() {
+export async function fetchListings() {
   try {
     const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
     const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME;
@@ -137,14 +137,14 @@ export async function fetchActiveListings() {
 
     return { items: results, columnMapping };
   } catch (error) {
-    console.error('fetchActiveListings error:', error);
+    console.error('fetchListings error:', error);
     return { items: [], columnMapping: {} };
   }
 }
 
 /**
- * Fetch all interest requests from the "Incoming Requests" worksheet.
- * Returns items where pharmacies have expressed interest.
+ * Fetch all offers from the "Offers" worksheet.
+ * Returns items where pharmacies have submitted offers.
  *
  * Back-compat:
  * - If you pass a string, it's treated as `requestingPharmacyName` (Interested Pharmacy Name).
@@ -165,15 +165,15 @@ export async function fetchActiveListings() {
  * - Status Date
  *
  * @param {string|{requestingPharmacyName?: string, listingPharmacyName?: string, listingIds?: string[]}} [requestingPharmacyNameOrOptions]
- * @returns {Promise<Array>} Array of interest requests
+ * @returns {Promise<Array>} Array of offers
  */
-export async function fetchInterestRequests(requestingPharmacyNameOrOptions = null) {
+export async function fetchOffers(requestingPharmacyNameOrOptions = null) {
   try {
     const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
     const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME;
     
     if (!spreadsheetId || !worksheetName) {
-      console.warn('Missing excess stock requests spreadsheet configuration');
+      console.warn('Missing excess stock offers spreadsheet configuration');
       return [];
     }
 
@@ -259,25 +259,25 @@ export async function fetchInterestRequests(requestingPharmacyNameOrOptions = nu
 
     return results;
   } catch (error) {
-    console.error('fetchInterestRequests error:', error);
+    console.error('fetchOffers error:', error);
     return [];
   }
 }
 
 /**
- * Update the Status of a request row in the "Incoming Requests" worksheet.
+ * Update the Status of an offer row in the "Offers" worksheet.
  *
  * @param {number} spreadsheetRow - 1-based row number in the worksheet
  * @param {string} statusValue - e.g. "Accepted" or "Rejected"
  * @param {Object} [columnMapping] - Optional mapping including `status`
  */
-export async function updateInterestRequestStatus(spreadsheetRow, statusValue, columnMapping = null) {
+export async function updateOfferStatus(spreadsheetRow, statusValue, columnMapping = null) {
   try {
     const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
     const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME;
 
     if (!spreadsheetId || !worksheetName) {
-      throw new Error('Missing excess stock requests spreadsheet configuration');
+      throw new Error('Missing excess stock offers spreadsheet configuration');
     }
 
     if (!spreadsheetRow) throw new Error('spreadsheetRow is required');
@@ -293,11 +293,11 @@ export async function updateInterestRequestStatus(spreadsheetRow, statusValue, c
     }
 
     if (requestsColumnMapping.status < 0) {
-      throw new Error('Status column not found in Incoming Requests worksheet');
+      throw new Error('Status column not found in Offers worksheet');
     }
 
     if (requestsColumnMapping.statusDate < 0) {
-      throw new Error('Status Date column not found in Incoming Requests worksheet');
+      throw new Error('Status Date column not found in Offers worksheet');
     }
 
     const statusDateValue = formatDateForSheets(new Date());
@@ -317,7 +317,7 @@ export async function updateInterestRequestStatus(spreadsheetRow, statusValue, c
 
     return { success: true, statusDate: statusDateValue };
   } catch (error) {
-    console.error('updateInterestRequestStatus error:', error);
+    console.error('updateOfferStatus error:', error);
     return { success: false, message: error.message };
   }
 }
@@ -581,7 +581,7 @@ export async function updateExcessStockListing(excessItem, columnMapping = null)
 }
 
 /**
- * Express interest in another pharmacy's excess stock listing by creating a request in the "Incoming Requests" worksheet.
+ * Submit an offer for another pharmacy's excess stock listing by creating a row in the "Offers" worksheet.
  * Used when a pharmacy sees an active listing and wants to request that item from the listing pharmacy.
  * Creates a record that includes both the listing pharmacy's details and the requesting pharmacy's information.
  * 
@@ -599,13 +599,13 @@ export async function updateExcessStockListing(excessItem, columnMapping = null)
  * @param {Object} [columnMapping] - Optional column mapping to avoid re-reading headers
  * @returns {Promise<{success: boolean, row?: number, message?: string}>} Result of the operation
  */
-export async function expressInterestInListing(requestItem, columnMapping = null) {
+export async function submitOffer(requestItem, columnMapping = null) {
   try {
     const spreadsheetId = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID;
     const worksheetName = process.env.NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME;
 
     if (!spreadsheetId || !worksheetName) {
-      throw new Error('Missing excess stock requests spreadsheet configuration');
+      throw new Error('Missing excess stock offers spreadsheet configuration');
     }
 
     // If no column mapping provided, read sheet to get it
@@ -644,7 +644,7 @@ export async function expressInterestInListing(requestItem, columnMapping = null
     if (requestsColumnMapping.listingId >= 0) {
       const listingIdValue = requestItem.listingId ? String(requestItem.listingId).trim() : '';
       if (!listingIdValue) {
-        throw new Error('Listing ID is required to express interest (Incoming Requests worksheet has a "Listing ID" column)');
+        throw new Error('Listing ID is required to submit an offer (Offers worksheet has a "Listing ID" column)');
       }
 
       updates.push({
@@ -738,7 +738,7 @@ export async function expressInterestInListing(requestItem, columnMapping = null
       });
     }
 
-    console.log('expressInterestInListing updates:', updates);
+    console.log('submitOffer updates:', updates);
     
     if (updates.length > 0) {
       await updateCells(spreadsheetId, worksheetName, updates);
@@ -746,7 +746,13 @@ export async function expressInterestInListing(requestItem, columnMapping = null
 
     return { success: true, row: nextRow };
   } catch (error) {
-    console.error('expressInterestInListing error:', error);
+    console.error('submitOffer error:', error);
     return { success: false, message: error.message };
   }
 }
+
+// Backwards-compatible aliases (older imports may still exist)
+export const fetchActiveListings = fetchListings;
+export const fetchInterestRequests = fetchOffers;
+export const updateInterestRequestStatus = updateOfferStatus;
+export const expressInterestInListing = submitOffer;
