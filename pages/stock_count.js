@@ -1,12 +1,13 @@
 // stock_count.js - Inventory stock counting page
 import Head from 'next/head';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Modal from '../components/Modal';
 import { readSheet, updateCells } from '../utils/sheetsAPI';
 
 export default function StockCount() {
   // State management
   const [inventoryItems, setInventoryItems] = useState([]);
+  const [filterInput, setFilterInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -149,6 +150,43 @@ export default function StockCount() {
       }
     };
   }, []);
+
+  // Simple fuzzy scoring: token match + sequential match bonus - length penalty
+  const scoreItem = (query, target) => {
+    if (!query) return 0;
+    const q = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const t = String(target || '').toLowerCase();
+
+    let score = 0;
+    for (const token of q) {
+      if (t.includes(token)) score += 10;
+      if (t.startsWith(token)) score += 5;
+    }
+
+    const joined = q.join(' ');
+    if (joined && t.includes(joined)) score += 15;
+
+    score -= Math.max(0, (t.length - joined.length) / 50);
+    return score;
+  };
+
+  const displayedItems = useMemo(() => {
+    const items = Array.isArray(inventoryItems) ? inventoryItems : [];
+    const q = (filterInput || '').trim();
+    if (!q) {
+      return items.map((item, arrayIdx) => ({ item, arrayIdx }));
+    }
+
+    const scored = items.map((item, arrayIdx) => {
+      const target = `${item?.itemName || ''} ${item?.usage ?? ''}`;
+      return { item, arrayIdx, score: scoreItem(q, target) };
+    });
+
+    return scored
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(({ item, arrayIdx }) => ({ item, arrayIdx }));
+  }, [inventoryItems, filterInput]);
   
   const handleStockChange = (arrayIdx, sheetRowId, newValue) => {
     // Prefer updating by index (O(1)) when a valid index is provided.
@@ -343,11 +381,24 @@ export default function StockCount() {
           </div>
         </div>
 
+        {/* Filter Input */}
+        <div className="row mb-2">
+          <div className="col-12">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Filter items..."
+              value={filterInput}
+              onChange={(e) => setFilterInput(e.target.value)}
+            />
+          </div>
+        </div>
+
         
         {/* Inventory Items Grid */}
         <div className="row">
-          {inventoryItems.length > 0 ? (
-            inventoryItems.map((item,arrayIdx) => (
+          {displayedItems.length > 0 ? (
+            displayedItems.map(({ item, arrayIdx }) => (
               <div key={item.sheetRowId} className="col-12 col-sm-6 col-md-4 col-lg-12 mb-2">
                 <div className="card h-100">
                   <div className="card-body p-3">
@@ -418,7 +469,7 @@ export default function StockCount() {
                                   updated[idx] = {
                                     ...updated[idx],
                                     orderAmount: checked,
-                                    specificOrderQty: checked ? item.usage : ''
+                                    specificOrderQty: ''
                                   };
                                   setInventoryItems(updated);
                                   setHasUnsavedChanges(true);
@@ -454,7 +505,7 @@ export default function StockCount() {
             <div className="col-12">
               <div className="alert alert-info text-center">
                 <i className="bi bi-info-circle me-2"></i>
-                No items found for your pharmacy
+                No items found
               </div>
             </div>
           )}

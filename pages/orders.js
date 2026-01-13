@@ -393,6 +393,33 @@ export default function Orders() {
     return markReceived(order);
   };
 
+  const handleCancelOrder = async (order) => {
+    try {
+      const status = 'Cancelled';
+      const originalIndex = orders.findIndex(o => o.spreadsheetRow === order.spreadsheetRow);
+      if (originalIndex === -1) {
+        throw new Error('Order not found in original list');
+      }
+
+      const allClientsOrdersSpreadsheetId = sessionData?.session?.allClientsSpreadsheet?.spreadsheetId;
+      if (!allClientsOrdersSpreadsheetId) {
+        throw new Error('No allClientsOrdersSpreadsheetId available in session');
+      }
+
+      const orderToUpdate = { ...orders[originalIndex], status };
+      const res = await updateOrder(allClientsOrdersSpreadsheetId, orderToUpdate, ordersColumnMapping);
+      if (!res || !res.success) throw new Error(res && res.message ? res.message : 'Failed to update');
+
+      const updatedOrders = [...orders];
+      updatedOrders[originalIndex] = { ...updatedOrders[originalIndex], status };
+      setOrders(updatedOrders);
+    } catch (err) {
+      console.error('cancel order error', err);
+      setErrorModalMessage(err.message || 'Failed to cancel order');
+      setShowErrorModal(true);
+    }
+  };
+
   const handleMarkDiscrepancy = (order) => {
     // Find the order in the original orders array using spreadsheetRow
     const originalIndex = orders.findIndex(o => o.spreadsheetRow === order.spreadsheetRow);
@@ -628,7 +655,7 @@ export default function Orders() {
             </thead>
             <tbody>
               {filteredOrders.map((order, index) => (
-                <tr key={index} className="lh-sm">
+                <tr key={index} className="lh-sm" data-spreadsheet-row={order.spreadsheetRow}>
                   <td className="text-center small">{order.date}</td>
                   <td>{order.item}{order.brand ? ` (${order.brand})` : ''}</td>
                   <td className="text-center">{order.qty}</td>
@@ -662,6 +689,15 @@ export default function Orders() {
                   <td className="text-center small">{order.minSupplier}</td>
                   <td>
                     {/* Mark Urgent moved to the Urgent column */}
+
+                    {['Pending','Hold'].includes(order.status) && (
+                      <button
+                        className="btn btn-sm btn-outline-danger small py-0 px-2 me-1"
+                        onClick={() => handleCancelOrder(order)}
+                      >
+                        Cancel Order
+                      </button>
+                    )}
 
                     {order.status === 'Ordered' && (
                       <>

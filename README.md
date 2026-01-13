@@ -64,6 +64,7 @@ Below is a page-by-page map of which spreadsheet/tab/columns each page interacts
    - **Add Order**: appends a row and writes the columns above (notably `Urgent?` uses `Y`).
    - **Mark Received**: updates the row’s `Status` to `Received`.
    - **Mark Urgent** (when allowed): updates `Urgent?`.
+   - **Cancel Order** (when allowed): updates the row’s `Status` to `Cancelled`.
    - **Mark Discrepancy**: updates `Status` (and can optionally write notes if a notes/comments column is wired).
 
 ### pages/monthly_orders.js (Monthly Orders)
@@ -113,19 +114,23 @@ Below is a page-by-page map of which spreadsheet/tab/columns each page interacts
 
 - **Spreadsheet**: `NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_ID`
 - **Worksheets**:
-   - Active listings: `NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME`
-   - Incoming requests: `NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME`
-- **Reads (Active Listings)**:
-   - Columns: `Date Added`, `Pharmacy Name`, `Item`, `Qty`, `Expiration`
-- **Writes (Active Listings)**:
-   - **Create listing**: appends a row and writes the columns above.
-   - **Edit listing**: updates `Item`, `Qty`, and `Expiration` for the listing row.
-- **Reads/Writes (Incoming Requests)**:
-   - Columns: `Listing Date Added`, `Listing Pharmacy Name`, `Item`, `Qty`, `Expiration Date`, `Interested Pharmacy Name`
-   - **Express interest**: appends a row in Incoming Requests.
+   - Listings: `NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_LISTINGS_WORKSHEET_NAME`
+   - Offers: `NEXT_PUBLIC_EXCESS_STOCK_SPREADSHEET_REQUESTS_WORKSHEET_NAME` (legacy env var name; worksheet is treated as “Offers”)
+- **Reads (Listings)**:
+   - Columns (supported): `Listing ID`, `Date Added`, `Pharmacy Name`, `Pharmacy Town`, `Item`, `Qty`, `Price`, `Expiration`, `Internal Only?`, `Delivery Available?`
+- **Writes (Listings)**:
+   - **Create listing**: appends a row (including `Listing ID` when available).
+   - **Edit listing**: updates `Item`, `Qty`, `Price`, `Expiration`, `Internal Only?`, `Delivery Available?` for the listing row.
+- **Reads/Writes (Offers)**:
+   - Columns (supported): `Listing ID`, `Listing Date Added`, `Listing Pharmacy Name`, `Item`, `Qty` (listing qty), `Expiration Date`, `Interested Pharmacy Name`, `Offer Qty` (aka `Qty Interested In`), `Offer Price`, `Notes`, `Status`, `Status Date`
+   - **Submit offer**: appends a row in Offers.
+   - **Update offer status**: updates `Status` + `Status Date` (e.g. Accepted/Rejected).
+- **Derived logic**:
+   - Remaining listing qty shown in the UI is computed as: $\max(0, \text{listing.qty} - \sum \text{accepted offer qty})$ per `Listing ID`.
 - **Also reads**:
    - Master items list from the master inventory spreadsheet (see `utils/ordersAPI.js`).
    - Usage data from the client `Stock` sheet (via `utils/stockAPI.js`).
+   - Pharmacy contact details for accepted offers via `GET /api/pharmacy` (used to show listing pharmacy email/phone in Notes).
 
 ## Usage
 

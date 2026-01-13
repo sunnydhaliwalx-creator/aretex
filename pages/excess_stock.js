@@ -39,7 +39,10 @@ export default function ExcessStock() {
   // Form state for editing
   const [editItem, setEditItem] = useState('');
   const [editQty, setEditQty] = useState('');
+  const [editPrice, setEditPrice] = useState('');
   const [editExpirationDate, setEditExpirationDate] = useState('');
+  const [editInternalOnly, setEditInternalOnly] = useState(false);
+  const [editDeliveryAvailable, setEditDeliveryAvailable] = useState(false);
 
   // Autocomplete for items
   const [masterItems, setMasterItems] = useState([]);
@@ -447,11 +450,24 @@ export default function ExcessStock() {
 
       const targetItem = excessItems.find(it => it && it.spreadsheetRow === currentEditRow);
       if (!targetItem) throw new Error('Could not find the listing to edit');
+
+      const qtyNum = parseInt(editQty, 10);
+      if (!Number.isFinite(qtyNum) || qtyNum <= 0) throw new Error('Please enter a valid quantity.');
+
+      const normalizedPrice = String(editPrice ?? '').trim().replace(/^£\s*/, '');
+      if (normalizedPrice !== '') {
+        const priceNum = Number(normalizedPrice);
+        if (!Number.isFinite(priceNum) || priceNum < 0) throw new Error('Please enter a valid price.');
+      }
+
       const itemToUpdate = {
         ...targetItem,
         item: editItem,
-        qty: parseInt(editQty, 10),
-        expirationDate: formatExpirationDate(editExpirationDate)
+        qty: qtyNum,
+        price: normalizedPrice === '' ? '' : normalizedPrice,
+        expirationDate: formatExpirationDate(editExpirationDate),
+        internalOnly: !!editInternalOnly,
+        deliveryAvailable: !!editDeliveryAvailable
       };
 
       const res = await updateExcessStockListing(itemToUpdate, excessColumnMapping);
@@ -471,7 +487,10 @@ export default function ExcessStock() {
       setShowEditModal(false);
       setEditItem('');
       setEditQty('');
+      setEditPrice('');
       setEditExpirationDate('');
+      setEditInternalOnly(false);
+      setEditDeliveryAvailable(false);
       setCurrentEditRow(null);
     }
   };
@@ -516,6 +535,13 @@ export default function ExcessStock() {
     setCurrentEditRow(item.spreadsheetRow);
     setEditItem(item.item);
     setEditQty(item.qty);
+
+    const rawPrice = item?.price ?? '';
+    const normalizedPrice = String(rawPrice).trim().replace(/^£\s*/, '');
+    setEditPrice(normalizedPrice);
+
+    setEditInternalOnly(!!item.internalOnly);
+    setEditDeliveryAvailable(!!item.deliveryAvailable);
     
     // Convert MM/YYYY back to YYYY-MM format for the month input
     const convertToMonthInput = (mmYyyy) => {
@@ -851,6 +877,18 @@ export default function ExcessStock() {
               />
             </div>
             <div className="mb-3">
+              <label htmlFor="editPrice" className="form-label">Price (£)</label>
+              <input
+                type="number"
+                className="form-control"
+                id="editPrice"
+                min="0"
+                step="0.01"
+                value={editPrice}
+                onChange={(e) => setEditPrice(e.target.value)}
+              />
+            </div>
+            <div className="mb-3">
               <label htmlFor="editExpirationDate" className="form-label">Expiration</label>
               <input 
                 type="month" 
@@ -860,17 +898,38 @@ export default function ExcessStock() {
                 onChange={(e) => setEditExpirationDate(e.target.value)}
                 required
               />
-              <button 
-                type="button" 
-                className="btn btn-danger btn-sm mt-2 py-0 px-2"
-                onClick={handleDeleteListing}
-              >
-                Delete Listing
-
-
-
-              </button>
             </div>
+
+            <div className="mb-3">
+              <div className="form-check">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  id="editInternalOnly"
+                  checked={editInternalOnly}
+                  onChange={(e) => setEditInternalOnly(e.target.checked)}
+                />
+                <label className="form-check-label" htmlFor="editInternalOnly">Internal Only?</label>
+              </div>
+              <div className="form-check">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  id="editDeliveryAvailable"
+                  checked={editDeliveryAvailable}
+                  onChange={(e) => setEditDeliveryAvailable(e.target.checked)}
+                />
+                <label className="form-check-label" htmlFor="editDeliveryAvailable">Delivery Available?</label>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-danger btn-sm py-0 px-2"
+              onClick={handleDeleteListing}
+            >
+              Delete Listing
+            </button>
           </div>
         }
         footer={
