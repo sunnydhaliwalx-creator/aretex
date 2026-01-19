@@ -349,9 +349,36 @@ export default function ExcessStock() {
   useEffect(() => {
     const currentPharmacy = sessionData?.session?.pharmacyName || '';
 
+    const groupNames = Array.isArray(sessionData?.session?.groupPharmacyNames)
+      ? sessionData.session.groupPharmacyNames
+      : [];
+
+    const groupNameSetLower = new Set(
+      groupNames
+        .filter(Boolean)
+        .map(n => String(n).trim().toLowerCase())
+    );
+
+    const isInternalOnlyListing = (listing) => {
+      const v = listing?.internalOnly;
+      if (v === true) return true;
+      if (v === false || v === null || v === undefined) return false;
+      const s = String(v).trim().toLowerCase();
+      return s === 'true' || s === 'yes' || s === 'y' || s === '1';
+    };
+
+    const canViewInPublicListings = (listing) => {
+      if (!listing) return false;
+      if (!isInternalOnlyListing(listing)) return true;
+      const listingPharmacyLower = String(listing.pharmacyName || '').trim().toLowerCase();
+      return !!listingPharmacyLower && groupNameSetLower.has(listingPharmacyLower);
+    };
+
     // Filter out items with remaining qty <= 0 (listed qty minus accepted offers), then keep only Others' listings
     const activeItems = excessItems.filter(item => getRemainingQtyForListing(item) > 0);
-    const others = activeItems.filter(item => item.pharmacyName !== currentPharmacy);
+    const others = activeItems
+      .filter(item => item.pharmacyName !== currentPharmacy)
+      .filter(canViewInPublicListings);
 
     if (!filterInput || !filterInput.trim()) {
       setOtherFilteredItems(others);
@@ -1071,7 +1098,7 @@ export default function ExcessStock() {
                         aria-selected={activeTab === 'others'}
                         onClick={() => setActiveTab('others')}
                       >
-                        Other's Listings ({otherListingsCount})
+                        Public Listings ({otherListingsCount})
                       </button>
                     </li>
 

@@ -91,7 +91,7 @@ export async function fetchListings() {
       pharmacyTown: findColumnByHeaderAny(headers, ['Pharmacy Town', 'Town']),
       item: findColumnByHeader(headers, 'Item'),
       qty: findColumnByHeader(headers, 'Qty'),
-      price: findColumnByHeader(headers, 'Price'),
+      price: findColumnByHeaderAny(headers, ['Price', 'Price (£)', 'Price (GBP)']),
       expirationDate: findColumnByHeader(headers, 'Expiration'),
       internalOnly: findColumnByHeader(headers, 'Internal Only?'),
       deliveryAvailable: findColumnByHeader(headers, 'Delivery Available?')
@@ -357,7 +357,7 @@ export async function createExcessStockListing(excessItem, columnMapping = null)
         pharmacyTown: findColumnByHeaderAny(headers, ['Pharmacy Town', 'Town']),
         item: findColumnByHeader(headers, 'Item'),
         qty: findColumnByHeader(headers, 'Qty'),
-        price: findColumnByHeader(headers, 'Price'),
+        price: findColumnByHeaderAny(headers, ['Price', 'Price (£)', 'Price (GBP)']),
         expirationDate: findColumnByHeader(headers, 'Expiration'),
         internalOnly: findColumnByHeader(headers, 'Internal Only?'),
         deliveryAvailable: findColumnByHeader(headers, 'Delivery Available?')
@@ -520,7 +520,7 @@ export async function updateExcessStockListing(excessItem, columnMapping = null)
         pharmacyTown: findColumnByHeaderAny(headers, ['Pharmacy Town', 'Town']),
         item: findColumnByHeader(headers, 'Item'),
         qty: findColumnByHeader(headers, 'Qty'),
-        price: findColumnByHeader(headers, 'Price'),
+        price: findColumnByHeaderAny(headers, ['Price', 'Price (£)', 'Price (GBP)']),
         expirationDate: findColumnByHeader(headers, 'Expiration'),
         internalOnly: findColumnByHeader(headers, 'Internal Only?'),
         deliveryAvailable: findColumnByHeader(headers, 'Delivery Available?')
@@ -543,6 +543,14 @@ export async function updateExcessStockListing(excessItem, columnMapping = null)
         spreadsheetRow: row, 
         spreadsheetCol: excessColumnMapping.qty + 1, 
         spreadsheetValue: excessItem.qty 
+      });
+    }
+
+    if (excessItem.price !== undefined && excessColumnMapping.price >= 0) {
+      updates.push({
+        spreadsheetRow: row,
+        spreadsheetCol: excessColumnMapping.price + 1,
+        spreadsheetValue: excessItem.price
       });
     }
     
