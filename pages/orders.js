@@ -336,22 +336,22 @@ export default function Orders() {
         // capture sheet row returned by createOrder
         orderToAppend.spreadsheetRow = res.row || undefined;
         orderToAppend.status = defaultStatus;
+
+        // Update local state - prepend so newest appears at top
+        setOrders(prev => [{ ...orderToAppend }, ...prev]);
       } else {
         // Append failed; show error modal and keep status as Pending
         const msg = (res && res.message) ? res.message : 'Unknown error creating order';
         setErrorModalMessage(msg);
         setShowErrorModal(true);
-        orderToAppend.status = 'Pending';
       }
     } catch (err) {
       console.error('createOrder failed', err);
       setErrorModalMessage(err.message || 'Error saving order');
       setShowErrorModal(true);
-      orderToAppend.status = defaultStatus;
     }
 
-  // Update local state (either Ordered or Pending) - prepend so newest appears at top
-  setOrders(prev => [{ ...orderToAppend }, ...prev]);
+    // If we hit an error, do not mutate local list; user can re-submit safely.
 
     // Reset form
     setAddItem('');

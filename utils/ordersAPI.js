@@ -207,13 +207,19 @@ export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Curren
  */
 export async function createOrder(spreadsheetId, order, columnMapping = null) {
   try {
-    const worksheetName = process.env.NEXT_PUBLIC_ALL_CLIENTS_ORDERS_WORKSHEET_NAME;
+    const worksheetName = process.env.NEXT_PUBLIC_ALL_CLIENTS_ORDERS_WORKSHEET_NAME || 'Current';
 
-    // If no column mapping provided, read sheet to get it
+    // If no column mapping provided, read sheet to get it (and reuse for nextRow)
     let ordersColumnMapping = columnMapping;
-    if (!ordersColumnMapping) {
-      const data = await readSheet(spreadsheetId, worksheetName) || [];
-      const headers = data.length > 0 ? data[0] : [];
+    let data = null;
+    const mappingMissing = !ordersColumnMapping || (typeof ordersColumnMapping === 'object' && Object.keys(ordersColumnMapping).length === 0);
+    if (mappingMissing) {
+      data = await readSheet(spreadsheetId, worksheetName);
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error('Unable to load the Orders sheet right now. Please try submitting again in a few seconds.');
+      }
+
+      const headers = data[0] || [];
       ordersColumnMapping = {
         date: findColumnByHeader(headers, 'Date'),
         pharmacy: findColumnByHeader(headers, 'Pharmacy'),
@@ -227,8 +233,20 @@ export async function createOrder(spreadsheetId, order, columnMapping = null) {
       };
     }
 
+    // Validate minimum required columns before writing
+    const requiredCols = ['date', 'pharmacy', 'item', 'qty'];
+    const missingCols = requiredCols.filter((k) => !(typeof ordersColumnMapping?.[k] === 'number') || ordersColumnMapping[k] < 0);
+    if (missingCols.length > 0) {
+      throw new Error(`Orders sheet is missing required columns (${missingCols.join(', ')}). Please contact support.`);
+    }
+
     // Read sheet to determine next row (we still need this for findFirstEmptyRow)
-    const data = await readSheet(spreadsheetId, worksheetName) || [];
+    if (!data) {
+      data = await readSheet(spreadsheetId, worksheetName);
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error('Unable to load the Orders sheet right now. Please try submitting again in a few seconds.');
+    }
 
     // Use helper to find the first empty row where key columns are blank
     const keyCols = [ordersColumnMapping.date, ordersColumnMapping.pharmacy, ordersColumnMapping.item, ordersColumnMapping.qty]
@@ -236,6 +254,11 @@ export async function createOrder(spreadsheetId, order, columnMapping = null) {
       .map(col => col + 1); // Convert to 1-based for findFirstEmptyRow
     
     const nextRow = findFirstEmptyRow(data, keyCols.length > 0 ? keyCols : [1,2,3,4]);
+    // Safety: never allow writes to row 1 (header/formula row). If we couldn't read data reliably,
+    // findFirstEmptyRow can return 1 and we'd overwrite the first row.
+    if (!Number.isFinite(nextRow) || nextRow <= 1) {
+      throw new Error('Could not determine where to append this order (sheet read failed). Please submit again.');
+    }
 
     // Prepare values for each column
     const itemValue = order.brand ? `${order.item} (${order.brand})` : (order.item || '');
