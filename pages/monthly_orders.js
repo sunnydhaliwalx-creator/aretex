@@ -34,7 +34,14 @@ export default function MonthlyOrders() {
   const [errorModalMessage, setErrorModalMessage] = useState('');
   const [showDiscrepancyModal, setShowDiscrepancyModal] = useState(false);
   const [discrepancyNotes, setDiscrepancyNotes] = useState('');
-  const [currentEditIndex, setCurrentEditIndex] = useState(null);
+  const [currentEditSpreadsheetRow, setCurrentEditSpreadsheetRow] = useState(null);
+
+  // Sort the currently displayed orders by Item (A → Z)
+  const displayedOrders = [...filteredOrders].sort((a, b) => {
+    const aItem = (a?.item ?? '').toString().trim();
+    const bItem = (b?.item ?? '').toString().trim();
+    return aItem.localeCompare(bItem, undefined, { sensitivity: 'base', numeric: true });
+  });
 
   // Initialize orders data on component mount
   useEffect(() => {
@@ -225,13 +232,13 @@ export default function MonthlyOrders() {
     }
   };
 
-  const handleMarkDiscrepancy = (index) => {
-    setCurrentEditIndex(index);
+  const handleMarkDiscrepancy = (order) => {
+    setCurrentEditSpreadsheetRow(order?.spreadsheetRow ?? null);
     setShowDiscrepancyModal(true);
   };
 
   const handleSaveDiscrepancy = async () => {
-    if (currentEditIndex === null) return setShowDiscrepancyModal(false);
+    if (currentEditSpreadsheetRow === null) return setShowDiscrepancyModal(false);
     
     try {
       const session = sessionData?.session;
@@ -243,10 +250,7 @@ export default function MonthlyOrders() {
         throw new Error('Missing session spreadsheetId, worksheetName, or pharmacyName');
       }
 
-      const order = filteredOrders[currentEditIndex];
-      if (!order) throw new Error('Order not found');
-
-      const row = order?.spreadsheetRow;
+      const row = currentEditSpreadsheetRow;
       if (!row) throw new Error('Missing spreadsheetRow for this order');
 
       const statusColIndex = statusColIndexRef.current;
@@ -284,7 +288,7 @@ export default function MonthlyOrders() {
     } finally {
       setShowDiscrepancyModal(false);
       setDiscrepancyNotes('');
-      setCurrentEditIndex(null);
+      setCurrentEditSpreadsheetRow(null);
     }
   };
 
@@ -295,7 +299,7 @@ export default function MonthlyOrders() {
     const headerCells = Array.from(headerRow.querySelectorAll('th'));
     const headers = headerCells.slice(0, -1).map(th => th.textContent.trim()); // Exclude Actions column
     
-    const csvData = filteredOrders.map(order => [
+    const csvData = displayedOrders.map(order => [
       order.date ? formatDateForSheets(order.date) : '',
       order.item || '',
       order.ordered || '',
@@ -415,7 +419,7 @@ export default function MonthlyOrders() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOrders.map((order, index) => (
+                  {displayedOrders.map((order, index) => (
                     <tr key={index} className="lh-sm" data-orders-log={order.ordersLogJson} data-spreadsheet-row={order.spreadsheetRow}>
                       <td className="text-center small">{order.date}</td>
                       <td>{order.item}</td>
@@ -434,7 +438,7 @@ export default function MonthlyOrders() {
                             </button>
                             <button
                               className="btn btn-sm btn-outline-danger small py-0 px-2"
-                              onClick={() => handleMarkDiscrepancy(index)}
+                              onClick={() => handleMarkDiscrepancy(order)}
                             >
                               Mark Discrepancy
                             </button>
@@ -446,7 +450,7 @@ export default function MonthlyOrders() {
                 </tbody>
               </table>
               
-              {filteredOrders.length === 0 && (
+              {displayedOrders.length === 0 && (
                 <div className="text-center py-4 text-muted">
                   No orders found for your pharmacy
                 </div>
