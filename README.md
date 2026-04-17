@@ -1,5 +1,5 @@
 # Aretex Pharmacy Management System
-
+.
 Aretex Pharmacy Management System is a comprehensive web application designed to help pharmacy clients efficiently manage their operations, including reviewing orders, placing new orders, and conducting stock inventory counts.
 
 ## Project Structure
