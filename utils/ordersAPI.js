@@ -163,7 +163,7 @@ export async function fetchFilteredOrders(spreadsheetId, worksheetName = 'Curren
       if (parsedDate < twelveMonthsAgo) continue;
 
       const inventoryItem = columnMapping.item >= 0 ? row[columnMapping.item] || '' : '';
-      const qty = columnMapping.qty >= 0 && row[columnMapping.qty] !== undefined && row[columnMapping.qty] !== '' ? Number(row[columnMapping.qty]) : null;
+      const qty = columnMapping.qty >= 0 && row[columnMapping.qty] !== undefined && row[columnMapping.qty] !== '' ? Number(String(row[columnMapping.qty]).replace(/,/g, '')) : null;
       const urgent = columnMapping.urgent >= 0 ? (row[columnMapping.urgent] || '').toString().trim() === 'Y' : false;
       const status = columnMapping.status >= 0 ? row[columnMapping.status] || '' : '';
       const comments = columnMapping.comments >= 0 ? (row[columnMapping.comments] || '').toString().trim() : '';

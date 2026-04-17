@@ -91,7 +91,7 @@ export default function Orders() {
       
       if (Array.isArray(rows) && rows.length > 0) {
         // Map to orders shape used in this page; include spreadsheetRow so we can update
-        const mapped = rows.map(r => ({ date: r.date, item: r.inventoryItem, brand: '', qty: r.qty || 0, status: r.status || 'Pending', urgent: !!r.urgent, cost: r.cost || '', minSupplier: r.minSupplier || '', spreadsheetRow: r.spreadsheetRow }));
+        const mapped = rows.map(r => ({ date: r.date, item: r.inventoryItem, brand: '', qty: (r.qty !== null && !isNaN(r.qty)) ? r.qty : 0, status: r.status || 'Pending', urgent: !!r.urgent, cost: r.cost || '', minSupplier: r.minSupplier || '', spreadsheetRow: r.spreadsheetRow }));
         setOrders(mapped);
         setFilteredOrders(mapped);
         return;
