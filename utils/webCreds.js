@@ -84,6 +84,7 @@ export async function findSessionForCredentials(username, password, options = {}
           spreadsheetId: clientSpreadsheetId,
           ordersWorksheetName: 'Master',
           stockWorksheetName: 'Stock',
+          transferWorksheetName: 'Transfers',
         },
       };
     }

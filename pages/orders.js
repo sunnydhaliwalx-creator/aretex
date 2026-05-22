@@ -1,6 +1,7 @@
 // orders.js - Refactored with React patterns
 import Head from 'next/head';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import Breadcrumbs from '../components/Breadcrumbs';
 import Modal from '../components/Modal';
 import { fetchFilteredOrders, createOrder, updateOrder, fetchMasterInventoryItemsOptions } from '../utils/ordersAPI';
 import { formatDateForSheets } from '../utils/sheetsAPI';
@@ -24,6 +25,7 @@ export default function Orders() {
   const [errorModalMessage, setErrorModalMessage] = useState('');
   const [showDiscrepancyModal, setShowDiscrepancyModal] = useState(false);
   const [discrepancyNotes, setDiscrepancyNotes] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   
   // Form state for adding orders
   const [addItem, setAddItem] = useState('');
@@ -263,6 +265,69 @@ export default function Orders() {
     setFilterInput(e.target.value);
   };
 
+  const getSortValue = (order, key) => {
+    switch (key) {
+      case 'date':
+        return order.date || '';
+      case 'item':
+        return `${order.item || ''} ${order.brand || ''}`;
+      case 'qty':
+        return order.qty;
+      case 'urgent':
+        return order.urgent ? 1 : 0;
+      case 'status':
+        return order.status || '';
+      case 'cost':
+        return order.cost || '';
+      case 'minSupplier':
+        return order.minSupplier || '';
+      default:
+        return '';
+    }
+  };
+
+  const compareSortValues = (aValue, bValue) => {
+    const cleanNumber = (value) => Number(String(value ?? '').replace(/[£$,]/g, ''));
+    const aNumber = cleanNumber(aValue);
+    const bNumber = cleanNumber(bValue);
+    const bothNumeric = String(aValue ?? '').trim() !== '' && String(bValue ?? '').trim() !== '' && !Number.isNaN(aNumber) && !Number.isNaN(bNumber);
+
+    if (bothNumeric) return aNumber - bNumber;
+    return String(aValue ?? '').localeCompare(String(bValue ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+  };
+
+  const displayedOrders = useMemo(() => {
+    if (!sortConfig.key) return filteredOrders;
+
+    return [...filteredOrders].sort((a, b) => {
+      const comparison = compareSortValues(getSortValue(a, sortConfig.key), getSortValue(b, sortConfig.key));
+      return sortConfig.direction === 'asc' ? comparison : -comparison;
+    });
+  }, [filteredOrders, sortConfig]);
+
+  const handleSort = (key) => {
+    setSortConfig((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return 'bi-arrow-down-up';
+    return sortConfig.direction === 'asc' ? 'bi-sort-up' : 'bi-sort-down';
+  };
+
+  const renderSortableHeader = (label, key) => (
+    <button
+      type="button"
+      className="btn btn-link btn-sm text-dark fw-bold text-decoration-none p-0"
+      onClick={() => handleSort(key)}
+    >
+      {label}
+      <i className={`bi ${getSortIcon(key)} ms-1`}></i>
+    </button>
+  );
+
   // allowed for orders marked Ordered and changes status to Received or Discrepancy
   const markReceived = async (order) => {
     try {
@@ -461,7 +526,7 @@ export default function Orders() {
     const headerCells = Array.from(headerRow.querySelectorAll('th'));
     const headers = headerCells.slice(0, -1).map(th => th.textContent.trim()); // Exclude last column (Actions)
     
-    const csvData = filteredOrders.map(order => [
+    const csvData = displayedOrders.map(order => [
       order.date || '', // Use the original date string
       `${order.item}${order.brand ? ` (${order.brand})` : ''}`,
       order.qty || '',
@@ -537,6 +602,7 @@ export default function Orders() {
       />
       
       <div className="container mt-5">
+        <Breadcrumbs items={[{ label: 'Orders' }]} />
         <h2 className="mb-4">Orders</h2>
         
         {/* Add Order Form */}
@@ -643,18 +709,18 @@ export default function Orders() {
           <table className="table table-sm table-light table-striped table-bordered table-hover">
             <thead className="table-light">
               <tr className="text-center small">
-                <th>Date</th>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>Urgent</th>
-                <th>Status</th>
-                <th>Cost</th>
-                <th>Min Supplier</th>
+                <th>{renderSortableHeader('Date', 'date')}</th>
+                <th>{renderSortableHeader('Item', 'item')}</th>
+                <th>{renderSortableHeader('Qty', 'qty')}</th>
+                <th>{renderSortableHeader('Urgent', 'urgent')}</th>
+                <th>{renderSortableHeader('Status', 'status')}</th>
+                <th>{renderSortableHeader('Cost', 'cost')}</th>
+                <th>{renderSortableHeader('Min Supplier', 'minSupplier')}</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredOrders.map((order, index) => (
+              {displayedOrders.map((order, index) => (
                 <tr key={index} className="lh-sm" data-spreadsheet-row={order.spreadsheetRow}>
                   <td className="text-center small">{order.date}</td>
                   <td>{order.item}{order.brand ? ` (${order.brand})` : ''}</td>

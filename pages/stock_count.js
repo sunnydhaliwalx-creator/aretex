@@ -1,6 +1,7 @@
 // stock_count.js - Inventory stock counting page
 import Head from 'next/head';
 import { useState, useEffect, useMemo, useRef } from 'react';
+import Breadcrumbs from '../components/Breadcrumbs';
 import Modal from '../components/Modal';
 import { readSheet, updateCells } from '../utils/sheetsAPI';
 
@@ -371,6 +372,7 @@ export default function StockCount() {
       />
       
       <div className="container-fluid mt-4">
+        <Breadcrumbs items={[{ label: 'Inventory' }, { label: 'Stock Count' }]} />
         <div className="row mb-1">
           <div className="col lh-sm">
             <h2 className="mb-0">Inventory Stock Count</h2>

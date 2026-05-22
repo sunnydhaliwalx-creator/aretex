@@ -8,7 +8,6 @@ export default function Navbar() {
   const [pharmacyName, setPharmacyName] = useState('');
   const [hasSession, setHasSession] = useState(false);
   const [hasClientSpreadsheetId, setHasClientSpreadsheetId] = useState(false);
-  const [sessionFile, setSessionFile] = useState('');
 
   useEffect(() => {
     const loadSession = async () => {
@@ -21,21 +20,18 @@ export default function Navbar() {
           setPharmacyName('');
           setHasSession(false);
           setHasClientSpreadsheetId(false);
-          setSessionFile('');
           console.debug('[Navbar] no server session');
           return;
         }
         setPharmacyName(s.pharmacyName || '');
         setHasSession(true);
         setHasClientSpreadsheetId(!!s.clientSpreadsheet?.spreadsheetId);
-        setSessionFile(s.file || '');
         console.debug('[Navbar] loaded session from server', s);
       } catch (err) {
         console.debug('[Navbar] error loading session from server', err);
         setPharmacyName('');
         setHasSession(false);
         setHasClientSpreadsheetId(false);
-        setSessionFile('');
       }
     };
 
@@ -50,19 +46,16 @@ export default function Navbar() {
             setPharmacyName('');
             setHasSession(false);
             setHasClientSpreadsheetId(false);
-            setSessionFile('');
           } else {
             const ns = JSON.parse(newRaw);
             setPharmacyName(ns.pharmacyName || '');
             setHasSession(!!ns);
             setHasClientSpreadsheetId(!!ns.clientSpreadsheet?.spreadsheetId);
-            setSessionFile(ns.file || '');
           }
         } catch (err) {
           setPharmacyName('');
           setHasSession(false);
           setHasClientSpreadsheetId(false);
-          setSessionFile('');
         }
       }
     };
@@ -97,7 +90,6 @@ export default function Navbar() {
       setPharmacyName('');
       setHasSession(false);
       setHasClientSpreadsheetId(false);
-      setSessionFile('');
       try { window.dispatchEvent(new Event('aretex_session_changed')); } catch (e) {}
       router.push('/login');
     })();
@@ -119,28 +111,54 @@ export default function Navbar() {
               <>
                 {hasClientSpreadsheetId && (
                   <>
-                    <li className="nav-item">
-                      <Link href="/orders" className="nav-link">Orders</Link>
+                    <li className="nav-item dropdown">
+                      <button
+                        type="button"
+                        className="nav-link dropdown-toggle btn btn-link"
+                        id="ordersDropdown"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        style={{textDecoration: 'none'}}
+                      >
+                        Orders
+                      </button>
+                      <ul className="dropdown-menu dropdown-menu-dark" aria-labelledby="ordersDropdown">
+                        <li>
+                          <Link href="/orders" className="dropdown-item">Orders</Link>
+                        </li>
+                        <li>
+                          <Link href="/monthly_orders" className="dropdown-item">Monthly Orders</Link>
+                        </li>
+                      </ul>
                     </li>
-                    {sessionFile === 'EO' && (
-                      <li className="nav-item">
-                        <Link href="/previous_orders" className="nav-link">Previous Orders</Link>
-                      </li>
-                    )}
-                    <li className="nav-item">
-                      <Link href="/monthly_orders" className="nav-link">Monthly Orders</Link>
-                    </li>
-                    <li className="nav-item">
-                      <Link href="/usage" className="nav-link">Usage</Link>
-                    </li>
-                    <li className="nav-item">
-                      <Link href="/stock_count" className="nav-link">Stock Count</Link>
+                    <li className="nav-item dropdown">
+                      <button
+                        type="button"
+                        className="nav-link dropdown-toggle btn btn-link"
+                        id="inventoryDropdown"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        style={{textDecoration: 'none'}}
+                      >
+                        Inventory
+                      </button>
+                      <ul className="dropdown-menu dropdown-menu-dark" aria-labelledby="inventoryDropdown">
+                        <li>
+                          <Link href="/usage" className="dropdown-item">Usage</Link>
+                        </li>
+                        <li>
+                          <Link href="/stock_count" className="dropdown-item">Stock Count</Link>
+                        </li>
+                        <li>
+                          <Link href="/transfers" className="dropdown-item">Transfers</Link>
+                        </li>
+                        <li>
+                          <Link href="/excess_stock" className="dropdown-item">Excess Stock</Link>
+                        </li>
+                      </ul>
                     </li>
                   </>
                 )}
-                <li className="nav-item">
-                  <Link href="/excess_stock" className="nav-link">Excess Stock</Link>
-                </li>
                 <li className="nav-item">
                   <Link href={process.env.NEXT_PUBLIC_DRUG_TARIFF_URL} className="nav-link" target="_blank">Drug Tariff</Link>
                 </li>

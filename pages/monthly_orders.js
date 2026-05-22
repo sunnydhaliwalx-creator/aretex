@@ -1,5 +1,6 @@
 import Head from 'next/head';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
+import Breadcrumbs from '../components/Breadcrumbs';
 import Modal from '../components/Modal';
 import { readSheet, updateCells, formatDateForSheets } from '../utils/sheetsAPI';
 
@@ -35,13 +36,69 @@ export default function MonthlyOrders() {
   const [showDiscrepancyModal, setShowDiscrepancyModal] = useState(false);
   const [discrepancyNotes, setDiscrepancyNotes] = useState('');
   const [currentEditSpreadsheetRow, setCurrentEditSpreadsheetRow] = useState(null);
+  const [sortConfig, setSortConfig] = useState({ key: 'item', direction: 'asc' });
 
   // Sort the currently displayed orders by Item (A → Z)
-  const displayedOrders = [...filteredOrders].sort((a, b) => {
-    const aItem = (a?.item ?? '').toString().trim();
-    const bItem = (b?.item ?? '').toString().trim();
-    return aItem.localeCompare(bItem, undefined, { sensitivity: 'base', numeric: true });
-  });
+  const getSortValue = (order, key) => {
+    switch (key) {
+      case 'date':
+        return order.date || '';
+      case 'item':
+        return order.item || '';
+      case 'ordered':
+        return order.ordered;
+      case 'status':
+        return order.status || '';
+      case 'price':
+        return order.price;
+      case 'supplier':
+        return order.supplier || '';
+      default:
+        return '';
+    }
+  };
+
+  const compareSortValues = (aValue, bValue) => {
+    const cleanNumber = (value) => Number(String(value ?? '').replace(/[£$,]/g, ''));
+    const aNumber = cleanNumber(aValue);
+    const bNumber = cleanNumber(bValue);
+    const bothNumeric = String(aValue ?? '').trim() !== '' && String(bValue ?? '').trim() !== '' && !Number.isNaN(aNumber) && !Number.isNaN(bNumber);
+
+    if (bothNumeric) return aNumber - bNumber;
+    return String(aValue ?? '').localeCompare(String(bValue ?? ''), undefined, { sensitivity: 'base', numeric: true });
+  };
+
+  const displayedOrders = useMemo(() => {
+    if (!sortConfig.key) return filteredOrders;
+
+    return [...filteredOrders].sort((a, b) => {
+      const comparison = compareSortValues(getSortValue(a, sortConfig.key), getSortValue(b, sortConfig.key));
+      return sortConfig.direction === 'asc' ? comparison : -comparison;
+    });
+  }, [filteredOrders, sortConfig]);
+
+  const handleSort = (key) => {
+    setSortConfig((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  const getSortIcon = (key) => {
+    if (sortConfig.key !== key) return 'bi-arrow-down-up';
+    return sortConfig.direction === 'asc' ? 'bi-sort-up' : 'bi-sort-down';
+  };
+
+  const renderSortableHeader = (label, key) => (
+    <button
+      type="button"
+      className="btn btn-link btn-sm text-dark fw-bold text-decoration-none p-0"
+      onClick={() => handleSort(key)}
+    >
+      {label}
+      <i className={`bi ${getSortIcon(key)} ms-1`}></i>
+    </button>
+  );
 
   // Initialize orders data on component mount
   useEffect(() => {
@@ -303,6 +360,7 @@ export default function MonthlyOrders() {
       order.date ? formatDateForSheets(order.date) : '',
       order.item || '',
       order.ordered || '',
+      order.status || '',
       order.price || '',
       order.supplier || ''
     ]);
@@ -375,6 +433,7 @@ export default function MonthlyOrders() {
       />
       
       <div className="container mt-5">
+        <Breadcrumbs items={[{ label: 'Orders', href: '/orders' }, { label: 'Monthly Orders' }]} />
         <h2 className="mb-4">Monthly Orders</h2>
         
         {loading && <div className="alert alert-info">Loading...</div>}
@@ -409,12 +468,12 @@ export default function MonthlyOrders() {
               <table className="table table-sm table-light table-striped table-bordered table-hover">
                 <thead className="table-light">
                   <tr className="text-center small">
-                    <th>Date</th>
-                    <th>Item</th>
-                    <th>Ordered</th>
-                    <th>Status</th>
-                    <th>Price</th>
-                    <th>Supplier</th>
+                    <th>{renderSortableHeader('Date', 'date')}</th>
+                    <th>{renderSortableHeader('Item', 'item')}</th>
+                    <th>{renderSortableHeader('Ordered', 'ordered')}</th>
+                    <th>{renderSortableHeader('Status', 'status')}</th>
+                    <th>{renderSortableHeader('Price', 'price')}</th>
+                    <th>{renderSortableHeader('Supplier', 'supplier')}</th>
                     <th>Actions</th>
                   </tr>
                 </thead>

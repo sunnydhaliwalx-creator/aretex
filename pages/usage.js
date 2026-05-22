@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import Breadcrumbs from '../components/Breadcrumbs';
 import { fetchStock } from '../utils/stockAPI';
 
 export default function UsagePage() {
@@ -112,6 +113,7 @@ export default function UsagePage() {
 				<title>Aretex - Monthly Usage</title>
 			</Head>
 
+		<Breadcrumbs items={[{ label: 'Inventory' }, { label: 'Usage' }]} />
 		<h3 className="mb-3">Monthly Usage</h3>
 
 		{loading && <div className="alert alert-info">Loading...</div>}

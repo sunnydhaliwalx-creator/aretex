@@ -1,5 +1,6 @@
 import Head from 'next/head';
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import Breadcrumbs from '../components/Breadcrumbs';
 import Modal from '../components/Modal';
 import { fetchListings, createExcessStockListing, updateExcessStockListing, submitOffer, fetchOffers, updateOfferStatus } from '../utils/excessStockAPI';
 import { fetchMasterInventoryItemsOptions } from '../utils/ordersAPI';
@@ -27,6 +28,7 @@ export default function ExcessStock() {
 
   // Tabs: default to Others' Listings
   const [activeTab, setActiveTab] = useState('others');
+  const [tableSorts, setTableSorts] = useState({});
   
   // Form state for adding excess items
   const [addItem, setAddItem] = useState('');
@@ -666,7 +668,7 @@ export default function ExcessStock() {
   const downloadCSV = () => {
     const headers = ['Date Added', 'Item', 'Qty', 'Expiration', 'Delivery Included?', 'Usage'];
 
-    const csvData = otherFilteredItems.map(item => [
+    const csvData = sortedOtherFilteredItems.map(item => [
       formatDateEuropean(item.dateAdded),
       item.item || '',
       item.qty || '',
@@ -856,6 +858,171 @@ export default function ExcessStock() {
   const joinNotes = useCallback((...parts) => {
     return (parts || []).filter(s => s && String(s).trim()).join('\n');
   }, []);
+
+  const compareSortValues = (aValue, bValue) => {
+    const cleanNumber = (value) => Number(String(value ?? '').replace(/[£$,]/g, ''));
+    const aNumber = cleanNumber(aValue);
+    const bNumber = cleanNumber(bValue);
+    const bothNumeric = String(aValue ?? '').trim() !== '' && String(bValue ?? '').trim() !== '' && !Number.isNaN(aNumber) && !Number.isNaN(bNumber);
+
+    if (bothNumeric) return aNumber - bNumber;
+    return String(aValue ?? '').localeCompare(String(bValue ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+  };
+
+  const sortRows = (rows, tableKey, getValue) => {
+    const sort = tableSorts[tableKey];
+    if (!sort?.key) return rows;
+
+    return [...rows].sort((a, b) => {
+      const comparison = compareSortValues(getValue(a, sort.key), getValue(b, sort.key));
+      return sort.direction === 'asc' ? comparison : -comparison;
+    });
+  };
+
+  const handleTableSort = (tableKey, key) => {
+    setTableSorts((current) => {
+      const existing = current[tableKey] || {};
+      return {
+        ...current,
+        [tableKey]: {
+          key,
+          direction: existing.key === key && existing.direction === 'asc' ? 'desc' : 'asc',
+        },
+      };
+    });
+  };
+
+  const getSortIcon = (tableKey, key) => {
+    const sort = tableSorts[tableKey];
+    if (sort?.key !== key) return 'bi-arrow-down-up';
+    return sort.direction === 'asc' ? 'bi-sort-up' : 'bi-sort-down';
+  };
+
+  const renderSortableHeader = (tableKey, label, key) => (
+    <button
+      type="button"
+      className="btn btn-link btn-sm text-dark fw-bold text-decoration-none p-0"
+      onClick={() => handleTableSort(tableKey, key)}
+    >
+      {label}
+      <i className={`bi ${getSortIcon(tableKey, key)} ms-1`}></i>
+    </button>
+  );
+
+  const sortedOtherFilteredItems = useMemo(() => {
+    return sortRows(otherFilteredItems, 'others', (item, key) => {
+      switch (key) {
+        case 'dateAdded':
+          return item.dateAdded || '';
+        case 'item':
+          return item.item || '';
+        case 'qty':
+          return getRemainingQtyForListing(item);
+        case 'price':
+          return item.price || '';
+        case 'expirationDate':
+          return item.expirationDate || '';
+        case 'pharmacyName':
+          return item.pharmacyName || '';
+        case 'pharmacyTown':
+          return item.pharmacyTown || '';
+        case 'deliveryAvailable':
+          return item.deliveryAvailable ? 1 : 0;
+        case 'usage':
+          return getUsageForItem(item.item);
+        default:
+          return '';
+      }
+    });
+  }, [otherFilteredItems, tableSorts, getRemainingQtyForListing, usageData, sessionData]);
+
+  const sortedSubmittedOffers = useMemo(() => {
+    return sortRows(submittedOffers || [], 'sent', (offer, key) => {
+      const listing = findListingForSentOffer(offer);
+      const listingPharmacyName = (offer?.listingPharmacyName || '').toString().trim() || (listing?.pharmacyName || '').toString().trim();
+
+      switch (key) {
+        case 'dateAdded':
+          return listing?.dateAdded ?? offer?.listingDateAdded ?? '';
+        case 'item':
+          return listing?.item ?? offer?.item ?? '';
+        case 'qty':
+          return listing?.qty ?? offer?.qty ?? '';
+        case 'price':
+          return listing?.price ?? '';
+        case 'expirationDate':
+          return listing?.expirationDate ?? offer?.expirationDate ?? '';
+        case 'listingPharmacy':
+          return listingPharmacyName;
+        case 'pharmacyTown':
+          return listing?.pharmacyTown ?? '';
+        case 'deliveryAvailable':
+          return listing?.deliveryAvailable ? 1 : 0;
+        case 'offerQty':
+          return offer?.qtyInterestedIn ?? '';
+        case 'offerPrice':
+          return offer?.offerPrice ?? '';
+        case 'status':
+          return offer?.status || '';
+        case 'notes':
+          return offer?.notes || '';
+        default:
+          return '';
+      }
+    });
+  }, [submittedOffers, tableSorts, findListingForSentOffer]);
+
+  const sortedMyListings = useMemo(() => {
+    return sortRows(myListingsSorted, 'mine', (item, key) => {
+      switch (key) {
+        case 'dateAdded':
+          return item.dateAdded || '';
+        case 'item':
+          return item.item || '';
+        case 'qty':
+          return getRemainingQtyForListing(item);
+        case 'price':
+          return item.price || '';
+        case 'expirationDate':
+          return item.expirationDate || '';
+        case 'deliveryAvailable':
+          return item.deliveryAvailable ? 1 : 0;
+        case 'internalOnly':
+          return item.internalOnly ? 1 : 0;
+        case 'offers':
+          return getOffersForListing(item).length;
+        default:
+          return '';
+      }
+    });
+  }, [myListingsSorted, tableSorts, getRemainingQtyForListing, getOffersForListing]);
+
+  const sortedReceivedOffersRows = useMemo(() => {
+    return sortRows(receivedOffersRowsEnriched, 'offers', (offer, key) => {
+      switch (key) {
+        case 'item':
+          return offer?._listingItem || '';
+        case 'qty':
+          return offer?._listingQty ?? '';
+        case 'expirationDate':
+          return offer?._listingExpirationDate || '';
+        case 'interestedPharmacyName':
+          return offer?.interestedPharmacyName || '';
+        case 'interestedPharmacyTown':
+          return offer?.interestedPharmacyTown || '';
+        case 'qtyInterestedIn':
+          return offer?.qtyInterestedIn ?? '';
+        case 'offerPrice':
+          return offer?.offerPrice ?? '';
+        case 'status':
+          return offer?.status || '';
+        case 'notes':
+          return offer?.notes || '';
+        default:
+          return '';
+      }
+    });
+  }, [receivedOffersRowsEnriched, tableSorts]);
 
   return (
     <>
@@ -1082,6 +1249,7 @@ export default function ExcessStock() {
       />
 
       <div className="container mt-5">
+        <Breadcrumbs items={[{ label: 'Inventory' }, { label: 'Excess Stock' }]} />
         <h2 className="mb-4">Excess Stock Exchange</h2>
         
         {loading && <div className="alert alert-info">Loading...</div>}
@@ -1165,20 +1333,20 @@ export default function ExcessStock() {
                         <table id="tableOtherListings" className="table table-sm table-light table-striped table-bordered table-hover">
                           <thead className="table-light">
                             <tr className="text-center small">
-                              <th>Date Added</th>
-                              <th>Item</th>
-                              <th>Qty</th>
-                              <th>Price</th>
-                              <th>Expiration</th>
-                              <th>Listing Pharmacy</th>
-                              <th>Pharmacy Town</th>
-                              <th>Delivery <br />Included?</th>
-                              <th>Usage</th>
+                              <th>{renderSortableHeader('others', 'Date Added', 'dateAdded')}</th>
+                              <th>{renderSortableHeader('others', 'Item', 'item')}</th>
+                              <th>{renderSortableHeader('others', 'Qty', 'qty')}</th>
+                              <th>{renderSortableHeader('others', 'Price', 'price')}</th>
+                              <th>{renderSortableHeader('others', 'Expiration', 'expirationDate')}</th>
+                              <th>{renderSortableHeader('others', 'Listing Pharmacy', 'pharmacyName')}</th>
+                              <th>{renderSortableHeader('others', 'Pharmacy Town', 'pharmacyTown')}</th>
+                              <th>{renderSortableHeader('others', <>Delivery <br />Included?</>, 'deliveryAvailable')}</th>
+                              <th>{renderSortableHeader('others', 'Usage', 'usage')}</th>
                               <th>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {otherFilteredItems.map((item, index) => (
+                            {sortedOtherFilteredItems.map((item, index) => (
                               <tr
                                 key={`other-${index}`}
                                 className="lh-sm"
@@ -1222,22 +1390,22 @@ export default function ExcessStock() {
                         <table id="tableSentOffers" className="table table-sm table-light table-striped table-bordered table-hover">
                           <thead className="table-light">
                             <tr className="text-center small">
-                              <th>Date Added</th>
-                              <th>Item</th>
-                              <th>Qty</th>
-                              <th>Price</th>
-                              <th>Expiration</th>
-                              <th>Listing Pharmacy</th>
-                              <th>Pharmacy Town</th>
-                              <th>Delivery <br />Included?</th>
-                              <th>Offer Qty</th>
-                              <th>Offer Price</th>
-                              <th>Status</th>
-                              <th>Notes</th>
+                              <th>{renderSortableHeader('sent', 'Date Added', 'dateAdded')}</th>
+                              <th>{renderSortableHeader('sent', 'Item', 'item')}</th>
+                              <th>{renderSortableHeader('sent', 'Qty', 'qty')}</th>
+                              <th>{renderSortableHeader('sent', 'Price', 'price')}</th>
+                              <th>{renderSortableHeader('sent', 'Expiration', 'expirationDate')}</th>
+                              <th>{renderSortableHeader('sent', 'Listing Pharmacy', 'listingPharmacy')}</th>
+                              <th>{renderSortableHeader('sent', 'Pharmacy Town', 'pharmacyTown')}</th>
+                              <th>{renderSortableHeader('sent', <>Delivery <br />Included?</>, 'deliveryAvailable')}</th>
+                              <th>{renderSortableHeader('sent', 'Offer Qty', 'offerQty')}</th>
+                              <th>{renderSortableHeader('sent', 'Offer Price', 'offerPrice')}</th>
+                              <th>{renderSortableHeader('sent', 'Status', 'status')}</th>
+                              <th>{renderSortableHeader('sent', 'Notes', 'notes')}</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {(submittedOffers || []).map((offer, i) => {
+                            {sortedSubmittedOffers.map((offer, i) => {
                               const listing = findListingForSentOffer(offer);
                               const itemName = listing?.item ?? offer?.item ?? '';
                               const listingQty = listing?.qty ?? offer?.qty ?? '';
@@ -1285,7 +1453,7 @@ export default function ExcessStock() {
                           </tbody>
                         </table>
 
-                        {(submittedOffers || []).length === 0 && (
+                        {sortedSubmittedOffers.length === 0 && (
                           <div className="text-center py-4 text-muted">No sent offers</div>
                         )}
                       </div>
@@ -1397,19 +1565,19 @@ export default function ExcessStock() {
                         <table id="tableMyListings" className="table table-sm table-light table-striped table-bordered table-hover">
                           <thead className="table-light">
                             <tr className="text-center small">
-                              <th>Date Added</th>
-                              <th>Item</th>
-                              <th>Qty</th>
-                              <th>Price</th>
-                              <th>Expiration</th>
-                              <th>Delivery <br />Included?</th>
-                              <th>Internal <br />Only?</th>
-                              <th>Offers</th>
+                              <th>{renderSortableHeader('mine', 'Date Added', 'dateAdded')}</th>
+                              <th>{renderSortableHeader('mine', 'Item', 'item')}</th>
+                              <th>{renderSortableHeader('mine', 'Qty', 'qty')}</th>
+                              <th>{renderSortableHeader('mine', 'Price', 'price')}</th>
+                              <th>{renderSortableHeader('mine', 'Expiration', 'expirationDate')}</th>
+                              <th>{renderSortableHeader('mine', <>Delivery <br />Included?</>, 'deliveryAvailable')}</th>
+                              <th>{renderSortableHeader('mine', <>Internal <br />Only?</>, 'internalOnly')}</th>
+                              <th>{renderSortableHeader('mine', 'Offers', 'offers')}</th>
                               <th>Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {myListingsSorted.map((item, index) => {
+                            {sortedMyListings.map((item, index) => {
                               const offersCount = getOffersForListing(item).length;
                               const rowKey = item.spreadsheetRow || index;
 
@@ -1457,19 +1625,19 @@ export default function ExcessStock() {
                         <table id="tableReceivedOffers" className="table table-sm table-light table-striped table-bordered table-hover">
                           <thead className="table-light">
                             <tr className="text-center small">
-                              <th>Item</th>
-                              <th>Qty</th>
-                              <th>Expiration</th>
-                              <th>Interested Pharmacy Name</th>
-                              <th>Interested Pharmacy Town</th>
-                              <th>Qty Offered</th>
-                              <th>Price Offered</th>
-                              <th>Status</th>
-                              <th>Notes</th>
+                              <th>{renderSortableHeader('offers', 'Item', 'item')}</th>
+                              <th>{renderSortableHeader('offers', 'Qty', 'qty')}</th>
+                              <th>{renderSortableHeader('offers', 'Expiration', 'expirationDate')}</th>
+                              <th>{renderSortableHeader('offers', 'Interested Pharmacy Name', 'interestedPharmacyName')}</th>
+                              <th>{renderSortableHeader('offers', 'Interested Pharmacy Town', 'interestedPharmacyTown')}</th>
+                              <th>{renderSortableHeader('offers', 'Qty Offered', 'qtyInterestedIn')}</th>
+                              <th>{renderSortableHeader('offers', 'Price Offered', 'offerPrice')}</th>
+                              <th>{renderSortableHeader('offers', 'Status', 'status')}</th>
+                              <th>{renderSortableHeader('offers', 'Notes', 'notes')}</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {receivedOffersRowsEnriched.map((offer, i) => {
+                            {sortedReceivedOffersRows.map((offer, i) => {
                               const st = normalizeStatusValue(offer?.status);
                               const itemName = offer?._listingItem || '';
                               const statusNorm = normalizeStatusValue(offer?.status);
@@ -1525,7 +1693,7 @@ export default function ExcessStock() {
                           </tbody>
                         </table>
 
-                        {receivedOffersRowsEnriched.length === 0 && (
+                        {sortedReceivedOffersRows.length === 0 && (
                           <div className="text-center py-4 text-muted">No received offers</div>
                         )}
                       </div>
