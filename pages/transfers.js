@@ -15,6 +15,13 @@ const TRANSFER_COLUMNS = [
 
 const normalizeHeader = (value) => (value || '').toString().trim();
 
+const formatTransferQty = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+  const numberValue = Number(String(value).replace(/,/g, ''));
+  if (!Number.isFinite(numberValue)) return value;
+  return numberValue.toLocaleString('en-US');
+};
+
 export default function Transfers() {
   const [transfers, setTransfers] = useState([]);
   const [hasValidHeaders, setHasValidHeaders] = useState(false);
@@ -176,7 +183,7 @@ export default function Transfers() {
                 <tr key={transfer.id} className="lh-sm">
                   {TRANSFER_COLUMNS.map((column) => (
                     <td key={column} className={['Transfer Qty', 'Unit Price', 'Amount'].includes(column) ? 'text-center' : ''}>
-                      {transfer[column]}
+                      {column === 'Transfer Qty' ? formatTransferQty(transfer[column]) : transfer[column]}
                     </td>
                   ))}
                 </tr>
