@@ -56,12 +56,18 @@ export default function StockCount() {
         // Get session from server cookie
         const sessRes = await fetch('/api/session');
         if (!sessRes.ok) {
+          console.log(`Session fetch failed: HTTP ${sessRes.status}`);
           setInventoryItems(fallback);
           return;
         }
         const sessJson = await sessRes.json();
         const session = sessJson.session;
         if (!session || !session.pharmacyName || !session.clientSpreadsheet?.spreadsheetId) {
+          console.log('Session missing required fields:', {
+            hasSession: !!session,
+            hasPharmacyName: !!session?.pharmacyName,
+            hasSpreadsheetId: !!session?.clientSpreadsheet?.spreadsheetId,
+          });
           setInventoryItems(fallback);
           return;
         }
@@ -76,6 +82,7 @@ export default function StockCount() {
         const data = await readSheet(spreadsheetId, stockWorksheetName);
         console.log(pharmacyName, spreadsheetId, 'Stock Sheet Data:', data);
         if (!Array.isArray(data) || data.length < 3) {
+          console.log('Stock sheet data missing or too short:', { isArray: Array.isArray(data), length: data?.length });
           setInventoryItems(fallback);
           return;
         }
@@ -96,6 +103,18 @@ export default function StockCount() {
         let inStockColLetter = inStockColIndex >= 0 ? getColumnLetterFromIndex(inStockColIndex) : '';
         let toOrderColLetter = toOrderColIndex >= 0 ? getColumnLetterFromIndex(toOrderColIndex) : '';
         let usageColLetter = usageColIndex >= 0 ? getColumnLetterFromIndex(usageColIndex) : '';
+
+        // Diagnostic: confirm the expected headers were found for this pharmacy
+        const expectedHeaders = [
+          { label: `${pharmacyName} - In Stock`, found: inStockColIndex >= 0 },
+          { label: `${pharmacyName} - To Order Specific`, found: toOrderColIndex >= 0 },
+          { label: `${pharmacyName} - Usage`, found: usageColIndex >= 0 },
+        ];
+        const foundHeaderCount = expectedHeaders.filter(h => h.found).length;
+        console.log(`Found ${foundHeaderCount} of ${expectedHeaders.length} required headers`);
+        expectedHeaders.filter(h => !h.found).forEach(h => {
+          console.log(`  Missing header: "${h.label}"`);
+        });
 
         /*if (stockCountColumnLetter === "") {
           // Not found, fallback
@@ -133,6 +152,13 @@ export default function StockCount() {
                 usageColLetter 
               });
             }
+        }
+
+        // Diagnostic: confirm rows were matched on column C === 'Tender'
+        if (results.length > 0) {
+          console.log(`Found ${results.length} row(s) where 'Tender' is in column C`);
+        } else {
+          console.log(`Found 0 rows where 'Tender' is in column C - check exact spelling/casing/whitespace in the sheet`);
         }
 
         setInventoryItems(results);

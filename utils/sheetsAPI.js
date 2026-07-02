@@ -30,7 +30,14 @@ export async function readSheet(spreadsheetId, worksheetName = null, range = nul
       });
 
       if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status}`);
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorBody = await response.json();
+          if (errorBody?.message) errorMessage += ` - ${errorBody.message}`;
+        } catch (parseErr) {
+          // response body wasn't JSON; fall back to status-only message
+        }
+        console.error('Google Sheets API error:', errorMessage);
         return [];
       }
 
