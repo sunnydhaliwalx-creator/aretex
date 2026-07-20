@@ -8,6 +8,33 @@ export default function Navbar() {
   const [pharmacyName, setPharmacyName] = useState('');
   const [hasSession, setHasSession] = useState(false);
   const [hasClientSpreadsheetId, setHasClientSpreadsheetId] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [actingAsPharmacyName, setActingAsPharmacyName] = useState('');
+  const [actingAsUsername, setActingAsUsername] = useState('');
+
+  const isAdminPharmacyCode = (value) => {
+    const normalized = (value || '').toString().replace(/^TEST\s*/i, '').trim().toLowerCase();
+    return normalized === 'admin';
+  };
+
+  const applySessionState = (s) => {
+    if (!s) {
+      setPharmacyName('');
+      setHasSession(false);
+      setHasClientSpreadsheetId(false);
+      setIsAdmin(false);
+      setActingAsPharmacyName('');
+      setActingAsUsername('');
+      return;
+    }
+
+    setPharmacyName(s.pharmacyName || '');
+    setHasSession(true);
+    setHasClientSpreadsheetId(!!s.clientSpreadsheet?.spreadsheetId);
+    setIsAdmin(typeof s.isAdmin === 'boolean' ? s.isAdmin : isAdminPharmacyCode(s.pharmacyCode));
+    setActingAsPharmacyName(s.adminSession ? (s.pharmacyName || '') : '');
+    setActingAsUsername(s.adminSession ? (s.username || '') : '');
+  };
 
   useEffect(() => {
     const loadSession = async () => {
@@ -17,21 +44,15 @@ export default function Navbar() {
         const j = await r.json();
         const s = j.session;
         if (!s) {
-          setPharmacyName('');
-          setHasSession(false);
-          setHasClientSpreadsheetId(false);
+          applySessionState(null);
           console.debug('[Navbar] no server session');
           return;
         }
-        setPharmacyName(s.pharmacyName || '');
-        setHasSession(true);
-        setHasClientSpreadsheetId(!!s.clientSpreadsheet?.spreadsheetId);
+        applySessionState(s);
         console.debug('[Navbar] loaded session from server', s);
       } catch (err) {
         console.debug('[Navbar] error loading session from server', err);
-        setPharmacyName('');
-        setHasSession(false);
-        setHasClientSpreadsheetId(false);
+        applySessionState(null);
       }
     };
 
@@ -43,19 +64,13 @@ export default function Navbar() {
         try {
           const newRaw = e.newValue;
           if (!newRaw) {
-            setPharmacyName('');
-            setHasSession(false);
-            setHasClientSpreadsheetId(false);
+            applySessionState(null);
           } else {
             const ns = JSON.parse(newRaw);
-            setPharmacyName(ns.pharmacyName || '');
-            setHasSession(!!ns);
-            setHasClientSpreadsheetId(!!ns.clientSpreadsheet?.spreadsheetId);
+            applySessionState(ns);
           }
         } catch (err) {
-          setPharmacyName('');
-          setHasSession(false);
-          setHasClientSpreadsheetId(false);
+          applySessionState(null);
         }
       }
     };
@@ -87,16 +102,39 @@ export default function Navbar() {
       } catch (err) {
         // ignore
       }
-      setPharmacyName('');
-      setHasSession(false);
-      setHasClientSpreadsheetId(false);
+      applySessionState(null);
       try { window.dispatchEvent(new Event('aretex_session_changed')); } catch (e) {}
       router.push('/login');
     })();
   };
 
+  const handleStopActing = async (e) => {
+    e.preventDefault();
+    try {
+      const resp = await fetch('/api/admin/stop-acting', {
+        method: 'POST',
+      });
+      if (!resp.ok) throw new Error('Unable to stop impersonating');
+      try { window.dispatchEvent(new Event('aretex_session_changed')); } catch (err) {}
+      router.push('/admin/clients');
+    } catch (err) {
+      // ignore for now
+    }
+  };
+
   return (
-    <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
+    <>
+      {actingAsPharmacyName ? (
+        <div className="admin-acting-banner alert alert-warning d-flex justify-content-between align-items-center text-dark m-0 py-2 px-3">
+          <div className="small fw-medium">
+            You are currently acting as <span className="fw-bold">{actingAsPharmacyName}</span> ({actingAsUsername})
+          </div>
+          <button type="button" onClick={handleStopActing} className="btn btn-sm btn-dark">
+            Stop Acting As
+          </button>
+        </div>
+      ) : null}
+      <nav className="navbar navbar-expand-lg navbar-dark bg-dark" style={actingAsPharmacyName ? { marginTop: '50px' } : undefined}>
       <div className="container-fluid">
         <Link href="/" className="navbar-brand d-flex align-items-center">
           <Image src="/logo_white.png" alt="Aretex" width={100} height={56} priority />
@@ -159,6 +197,28 @@ export default function Navbar() {
                     </li>
                   </>
                 )}
+                {isAdmin && (
+                  <li className="nav-item dropdown">
+                    <button
+                      type="button"
+                      className="nav-link dropdown-toggle btn btn-link"
+                      id="adminDropdown"
+                      data-bs-toggle="dropdown"
+                      aria-expanded="false"
+                      style={{textDecoration: 'none'}}
+                    >
+                      Admin
+                      </button>
+                      <ul className="dropdown-menu dropdown-menu-dark" aria-labelledby="adminDropdown">
+                        <li>
+                          <Link href="/admin/clients" className="dropdown-item">Clients</Link>
+                        </li>
+                        <li>
+                          <Link href="/admin/master_orders" className="dropdown-item">Master Orders</Link>
+                        </li>
+                      </ul>
+                    </li>
+                )}
                 <li className="nav-item">
                   <Link href={process.env.NEXT_PUBLIC_DRUG_TARIFF_URL} className="nav-link" target="_blank">Drug Tariff</Link>
                 </li>
@@ -173,5 +233,6 @@ export default function Navbar() {
         </div>
       </div>
     </nav>
+    </>
   );
 }

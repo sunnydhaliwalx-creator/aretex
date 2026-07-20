@@ -15,13 +15,77 @@ const COL_TOWN = 7;
 const COL_EMAIL = 8;
 const COL_PHONE = 9;
 
-const normalizeTestPrefix = (value) => (value || '').toString().replace('TEST ', '').trim();
+const normalizeTestPrefix = (value) => (value || '').toString().replace(/^TEST\s+/i, '').trim();
+
+export const isAdminPharmacyCode = (value) => {
+  const normalized = (value || '').toString().replace(/^TEST\s*/i, '').trim().toLowerCase();
+  return normalized === 'admin';
+};
+
+const buildSessionForRow = (row, rows, options = {}) => {
+  if (!row || !Array.isArray(rows)) return null;
+
+  const matchedGroupCode = normalizeTestPrefix(row[COL_GROUP_CODE]);
+
+  const groupSet = new Set();
+  for (const r of rows) {
+    if (!r) continue;
+    const rGroupCode = normalizeTestPrefix(r[COL_GROUP_CODE]);
+    const rPharmacyCode = normalizeTestPrefix(r[COL_PHARMACY_CODE]);
+    const rPharmacyName = (r[COL_PHARMACY_NAME] || '').toString().trim();
+    if (rGroupCode && rPharmacyCode && rGroupCode === matchedGroupCode && rPharmacyName) {
+      groupSet.add(rPharmacyName);
+    }
+  }
+
+  const file = (row[COL_FILE] || '').toString();
+  const { mcoSpreadsheetId, eoSpreadsheetId } = options || {};
+  const allClientsOrdersSpreadsheetId = file === 'MCO'
+    ? mcoSpreadsheetId
+    : file === 'EO'
+      ? eoSpreadsheetId
+      : file;
+
+  const allClientsOrdersWorksheetName = process.env.NEXT_PUBLIC_ALL_CLIENTS_ORDERS_WORKSHEET_NAME || '';
+
+  const clientSpreadsheetId = (row[COL_STOCK_SPREADSHEET_ID] || '').toString().trim();
+  const town = (row[COL_TOWN] || '').toString().trim();
+  const email = (row[COL_EMAIL] || '').toString().trim();
+  const phone = (row[COL_PHONE] || '').toString().trim();
+
+  return {
+    file,
+    groupCode: matchedGroupCode,
+    groupPharmacyNames: Array.from(groupSet),
+    pharmacyCode: normalizeTestPrefix(row[COL_PHARMACY_CODE]),
+    pharmacyName: (row[COL_PHARMACY_NAME] || '').toString(),
+    town,
+    email,
+    phone,
+    username: (row[COL_USERNAME] || '').toString(),
+    allClientsSpreadsheet: {
+      spreadsheetId: allClientsOrdersSpreadsheetId,
+      worksheetName: allClientsOrdersWorksheetName,
+    },
+    clientSpreadsheet: {
+      spreadsheetId: clientSpreadsheetId,
+      ordersWorksheetName: 'Master',
+      stockWorksheetName: 'Stock',
+      transferWorksheetName: 'Transfers',
+    },
+    isAdmin: isAdminPharmacyCode(row[COL_PHARMACY_CODE]),
+  };
+}
 
 export async function getWebCredsRows(spreadsheetId) {
   if (!spreadsheetId) throw new Error('Missing spreadsheetId');
   const data = await getSheetData(spreadsheetId, WEB_CREDS_WORKSHEET_NAME);
   if (!Array.isArray(data) || data.length === 0) return [];
   return data;
+}
+
+export function buildSessionForWebCredRow(row, rows, options = {}) {
+  return buildSessionForRow(row, rows, options);
 }
 
 export async function findSessionForCredentials(username, password, options = {}) {
@@ -40,53 +104,7 @@ export async function findSessionForCredentials(username, password, options = {}
     const rowPassword = row[COL_PASSWORD] !== undefined ? String(row[COL_PASSWORD]) : '';
 
     if (rowUsername === username && rowPassword === password) {
-      const matchedGroupCode = normalizeTestPrefix(row[COL_GROUP_CODE]);
-
-      // collect all pharmacy names for rows that share this groupCode
-      const groupSet = new Set();
-      for (const r of data) {
-        if (!r) continue;
-        const rGroupCode = normalizeTestPrefix(r[COL_GROUP_CODE]);
-        const rPharmacyCode = normalizeTestPrefix(r[COL_PHARMACY_CODE]);
-        const rPharmacyName = (r[COL_PHARMACY_NAME] || '').toString().trim();
-        if (rGroupCode && rPharmacyCode && rGroupCode === matchedGroupCode) groupSet.add(rPharmacyName);
-      }
-
-      const file = (row[COL_FILE] || '').toString();
-      const allClientsOrdersSpreadsheetId = file === 'MCO'
-        ? mcoSpreadsheetId
-        : file === 'EO'
-          ? eoSpreadsheetId
-          : file;
-
-      const allClientsOrdersWorksheetName = process.env.NEXT_PUBLIC_ALL_CLIENTS_ORDERS_WORKSHEET_NAME || '';
-
-      const clientSpreadsheetId = (row[COL_STOCK_SPREADSHEET_ID] || '').toString().trim();
-      const town = (row[COL_TOWN] || '').toString().trim();
-      const email = (row[COL_EMAIL] || '').toString().trim();
-      const phone = (row[COL_PHONE] || '').toString().trim();
-
-      return {
-        file,
-        groupCode: matchedGroupCode,
-        groupPharmacyNames: Array.from(groupSet),
-        pharmacyCode: normalizeTestPrefix(row[COL_PHARMACY_CODE]),
-        pharmacyName: (row[COL_PHARMACY_NAME] || '').toString(),
-        town,
-        email,
-        phone,
-        username: (row[COL_USERNAME] || '').toString(),
-        allClientsSpreadsheet: {
-          spreadsheetId: allClientsOrdersSpreadsheetId,
-          worksheetName: allClientsOrdersWorksheetName,
-        },
-        clientSpreadsheet: {
-          spreadsheetId: clientSpreadsheetId,
-          ordersWorksheetName: 'Master',
-          stockWorksheetName: 'Stock',
-          transferWorksheetName: 'Transfers',
-        },
-      };
+      return buildSessionForRow(row, data, { mcoSpreadsheetId, eoSpreadsheetId });
     }
   }
 
