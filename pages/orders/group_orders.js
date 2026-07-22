@@ -17,11 +17,30 @@ const URGENT_OPTIONS = [
   { value: 'no', label: 'No' },
 ];
 
-const normalizePermission = (value) => (value || '').toString().trim().toLowerCase().replace(/^TEST\s*/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+const normalizePermission = (value) =>
+  (value || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/^TEST\s*/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
 
-const canAccessMasterOrders = (session) => {
+const isPharmacyGroupAdminPermission = (value) => {
+  const normalized = normalizePermission(value);
+  if (!normalized) return false;
+  return (
+    normalized === 'pharmacy group admin' ||
+    normalized === 'group admin' ||
+    normalized === 'pharmacy_group_admin' ||
+    normalized === 'groupadmin' ||
+    (normalized.includes('group') && normalized.includes('admin'))
+  );
+};
+
+const canAccessGroupOrders = (session) => {
   if (!session) return false;
-  return session?.isAdmin === true || normalizePermission(session.permission) === 'admin';
+  return session.isPharmacyGroupAdmin === true || isPharmacyGroupAdminPermission(session.permission);
 };
 
 const toStartOfDay = (dateObj) => {
@@ -162,11 +181,11 @@ const SearchableMultiSelect = ({
                 <input
                   type="checkbox"
                   className="form-check-input"
-                  id={`${title.replace(/\\s+/g, '-')}-${option.value}`}
+                  id={`${title.replace(/\s+/g, '-')}-${option.value}`}
                   checked={checked}
                   onChange={() => onToggle(option.value)}
                 />
-                <label className="form-check-label" htmlFor={`${title.replace(/\\s+/g, '-')}-${option.value}`}>
+                <label className="form-check-label" htmlFor={`${title.replace(/\s+/g, '-')}-${option.value}`}>
                   {option.label}
                 </label>
               </div>
@@ -190,23 +209,19 @@ const SearchableMultiSelect = ({
   );
 };
 
-export default function AdminMasterOrders() {
+export default function GroupOrders() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [orders, setOrders] = useState([]);
-
-  const [pharmacyGroupOptions, setPharmacyGroupOptions] = useState([]);
   const [pharmacyOptions, setPharmacyOptions] = useState([]);
   const [statusOptions, setStatusOptions] = useState([]);
 
-  const [selectedPharmacyGroups, setSelectedPharmacyGroups] = useState([]);
   const [selectedPharmacies, setSelectedPharmacies] = useState([]);
   const [selectedStatuses, setSelectedStatuses] = useState([]);
   const [selectedDateRanges, setSelectedDateRanges] = useState([]);
   const [selectedUrgents, setSelectedUrgents] = useState([]);
 
-  const [groupSearch, setGroupSearch] = useState('');
   const [pharmacySearch, setPharmacySearch] = useState('');
   const [statusSearch, setStatusSearch] = useState('');
   const [dateRangeSearch, setDateRangeSearch] = useState('');
@@ -225,15 +240,15 @@ export default function AdminMasterOrders() {
 
         const sessionPayload = await sessionRes.json();
         const session = sessionPayload?.session;
-        if (!canAccessMasterOrders(session)) {
+        if (!canAccessGroupOrders(session)) {
           router.push('/orders');
           return;
         }
 
-        const ordersRes = await fetch('/api/admin/master_orders');
+        const ordersRes = await fetch('/api/admin/master_orders?scope=group');
         if (!ordersRes.ok) {
           const errorPayload = await ordersRes.json().catch(() => null);
-          const message = errorPayload?.message || 'Failed to load master orders';
+          const message = errorPayload?.message || 'Failed to load group orders';
           throw new Error(message);
         }
 
@@ -243,13 +258,12 @@ export default function AdminMasterOrders() {
         const statusList = Array.isArray(filters.statuses) ? filters.statuses : [];
 
         setOrders(list);
-        setPharmacyGroupOptions(Array.isArray(filters.pharmacyGroups) ? filters.pharmacyGroups : []);
         setPharmacyOptions(Array.isArray(filters.pharmacies) ? filters.pharmacies : []);
         setStatusOptions(statusList
           .filter((value) => (value || '').toString().trim())
           .map((value) => ({ value, label: value })));
       } catch (err) {
-        setError(err.message || 'Unable to load master orders');
+        setError(err.message || 'Unable to load group orders');
       } finally {
         setLoading(false);
       }
@@ -266,12 +280,10 @@ export default function AdminMasterOrders() {
   };
 
   const clearAllFilters = () => {
-    setSelectedPharmacyGroups([]);
     setSelectedPharmacies([]);
     setSelectedStatuses([]);
     setSelectedDateRanges([]);
     setSelectedUrgents([]);
-    setGroupSearch('');
     setPharmacySearch('');
     setStatusSearch('');
     setDateRangeSearch('');
@@ -281,7 +293,6 @@ export default function AdminMasterOrders() {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      const matchesGroup = selectedPharmacyGroups.length === 0 || selectedPharmacyGroups.includes(order.pharmacyGroup || '');
       const matchesPharmacy = selectedPharmacies.length === 0 || selectedPharmacies.includes(order.pharmacyCode || '');
       const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(order.status || '');
       const matchesUrgent = selectedUrgents.length === 0 || selectedUrgents.includes(order.urgent ? 'yes' : 'no');
@@ -292,9 +303,9 @@ export default function AdminMasterOrders() {
         customRangeEnd,
       });
 
-      return matchesGroup && matchesPharmacy && matchesStatus && matchesUrgent && matchesDate;
+      return matchesPharmacy && matchesStatus && matchesUrgent && matchesDate;
     });
-  }, [orders, selectedPharmacyGroups, selectedPharmacies, selectedStatuses, selectedUrgents, selectedDateRanges, customRangeStart, customRangeEnd]);
+  }, [orders, selectedPharmacies, selectedStatuses, selectedUrgents, selectedDateRanges, customRangeStart, customRangeEnd]);
 
   const sortedOrders = useMemo(() => {
     if (!sortConfig.key) return filteredOrders;
@@ -302,13 +313,13 @@ export default function AdminMasterOrders() {
     const getSortValue = (order) => {
       if (sortConfig.key === 'date') return Number(order.dateMs) || 0;
       if (sortConfig.key === 'group') return (order.pharmacyGroup || '').toLowerCase();
-    if (sortConfig.key === 'pharmacy') return (order.pharmacyName || '').toLowerCase();
-    if (sortConfig.key === 'item') return `${order.item || ''}`.toLowerCase();
-    if (sortConfig.key === 'status') return (order.status || '').toLowerCase();
-    if (sortConfig.key === 'qty') return Number(order.qty || 0);
-    if (sortConfig.key === 'urgent') return order.urgent ? 1 : 0;
-    return '';
-  };
+      if (sortConfig.key === 'pharmacy') return (order.pharmacyName || '').toLowerCase();
+      if (sortConfig.key === 'item') return `${order.item || ''}`.toLowerCase();
+      if (sortConfig.key === 'status') return (order.status || '').toLowerCase();
+      if (sortConfig.key === 'qty') return Number(order.qty || 0);
+      if (sortConfig.key === 'urgent') return order.urgent ? 1 : 0;
+      return '';
+    };
 
     return [...filteredOrders].sort((a, b) => {
       const aValue = getSortValue(a);
@@ -345,26 +356,16 @@ export default function AdminMasterOrders() {
     <>
       <Head>
         <link rel="icon" href="/favicon.ico" sizes="any" />
-        <title>Aretex - Admin Master Orders</title>
+        <title>Aretex - Group Orders</title>
       </Head>
       <div className="container-fluid mt-5">
-        <Breadcrumbs items={[{ label: 'Admin', href: '/admin' }, { label: 'Master Orders' }]} />
+        <Breadcrumbs items={[{ label: 'Orders', href: '/orders' }, { label: 'Group Orders' }]} />
         <div className="row g-3">
           <div className="col-12 col-lg-3">
             <div className="position-sticky" style={{ top: '100px' }}>
               <h5 className="mb-3">Filters</h5>
               <div className="card mb-3" style={{ maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' }}>
                 <div className="card-body">
-                  <SearchableMultiSelect
-                    title="Pharmacy Group"
-                    options={pharmacyGroupOptions}
-                    selectedValues={selectedPharmacyGroups}
-                    searchTerm={groupSearch}
-                    onSearchChange={setGroupSearch}
-                    onToggle={(value) => updateSelection(value, selectedPharmacyGroups, setSelectedPharmacyGroups)}
-                    onClear={() => setSelectedPharmacyGroups([])}
-                  />
-
                   <SearchableMultiSelect
                     title="Pharmacy"
                     options={pharmacyOptions}
@@ -443,14 +444,14 @@ export default function AdminMasterOrders() {
           <div className="col-12 col-lg-9">
             <div className="d-flex justify-content-between align-items-end mb-3">
               <div>
-                <h2 className="mb-0">Master Orders</h2>
+                <h2 className="mb-0">Group Orders</h2>
                 <small className="text-muted">
                   {filteredOrders.length} of {orders.length} rows
                 </small>
               </div>
             </div>
 
-            {loading && <div className="alert alert-info">Loading master orders...</div>}
+            {loading && <div className="alert alert-info">Loading group orders...</div>}
             {error && <div className="alert alert-danger">{error}</div>}
 
             {!loading && !error && (

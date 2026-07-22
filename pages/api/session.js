@@ -1,15 +1,17 @@
-import { isAdminPharmacyCode } from '../../utils/webCreds';
-
-const normalizeAdminCode = (value) => isAdminPharmacyCode(value);
+import { resolveSessionPermissionState } from '../../utils/webCreds';
 
 const readSessionFromCookie = (cookieHeader) => {
-  const cookie = cookieHeader || '';
-  const match = cookie.split(';').map(s => s.trim()).find(s => s.startsWith('aretex_session='));
-  if (!match) return null;
+  try {
+    const cookie = cookieHeader || '';
+    const match = cookie.split(';').map(s => s.trim()).find(s => s.startsWith('aretex_session='));
+    if (!match) return null;
 
-  const raw = match.split('=')[1] || '';
-  const decoded = decodeURIComponent(raw);
-  return JSON.parse(decoded || 'null');
+    const raw = match.split('=')[1] || '';
+    const decoded = decodeURIComponent(raw);
+    return JSON.parse(decoded || 'null');
+  } catch {
+    return null;
+  }
 };
 
 export default async function handler(req, res) {
@@ -19,9 +21,13 @@ export default async function handler(req, res) {
     const session = readSessionFromCookie(req.headers.cookie);
     if (!session) return res.status(200).json({ session: null });
 
+    const resolved = resolveSessionPermissionState(session);
     const resolvedSession = {
       ...session,
-      isAdmin: typeof session.isAdmin === 'boolean' ? session.isAdmin : normalizeAdminCode(session.pharmacyCode),
+      permission: resolved.permission,
+      isAdmin: resolved.isAdmin,
+      isPharmacyGroupAdmin: resolved.isPharmacyGroupAdmin,
+      canAccessMasterOrders: resolved.canAccessMasterOrders,
     };
 
     return res.status(200).json({ session: resolvedSession });

@@ -1,9 +1,7 @@
-import { buildSessionForWebCredRow, getWebCredsRows, isAdminPharmacyCode } from '../../../utils/webCreds';
+import { buildSessionForWebCredRow, getWebCredsRows, isAdminPermission, resolveSessionPermissionState, resolveWebCredsColumnIndexes } from '../../../utils/webCreds';
 
 const MCO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ALL_CLIENTS_MCO_SPREADSHEET_ID;
 const EO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ALL_CLIENTS_EO_SPREADSHEET_ID;
-
-const COL_USERNAME = 4;
 
 const readSessionFromCookie = (cookieHeader) => {
   const cookie = cookieHeader || '';
@@ -16,9 +14,8 @@ const readSessionFromCookie = (cookieHeader) => {
 };
 
 const isSessionAdmin = (session) => {
-  if (!session) return false;
-  if (typeof session.isAdmin === 'boolean') return session.isAdmin;
-  return isAdminPharmacyCode(session.pharmacyCode);
+  const resolved = resolveSessionPermissionState(session);
+  return resolved.isAdmin;
 };
 
 const setSessionCookie = (res, session) => {
@@ -45,15 +42,16 @@ export default async function handler(req, res) {
 
   try {
     const rows = await getWebCredsRows(MCO_SPREADSHEET_ID);
-    const targetRow = (Array.isArray(rows) ? rows : []).find((row) => Array.isArray(row) && String(row[COL_USERNAME] || '').trim() === targetUsername);
+    const columns = resolveWebCredsColumnIndexes(rows);
+    const targetRow = (Array.isArray(rows) ? rows : []).find((row) => Array.isArray(row) && String(row[columns.username] || '').trim() === targetUsername);
     if (!targetRow) return res.status(404).json({ message: 'Target user not found' });
 
-    const targetPharmacyCode = targetRow[2];
-    if (isAdminPharmacyCode(targetPharmacyCode)) return res.status(400).json({ message: 'Cannot impersonate an admin account' });
+    if (isAdminPermission(targetRow, { columns })) return res.status(400).json({ message: 'Cannot impersonate an admin account' });
 
     const impersonatedSession = buildSessionForWebCredRow(targetRow, rows, {
       mcoSpreadsheetId: MCO_SPREADSHEET_ID,
       eoSpreadsheetId: EO_SPREADSHEET_ID,
+      columns,
     });
 
     if (!impersonatedSession) return res.status(404).json({ message: 'Unable to build impersonated session' });
@@ -63,7 +61,7 @@ export default async function handler(req, res) {
       adminSession: null,
     };
 
-    impersonatedSession.isAdmin = true;
+    impersonatedSession.isAdmin = false;
     impersonatedSession.adminSession = adminSession;
 
     setSessionCookie(res, impersonatedSession);

@@ -1,10 +1,6 @@
-import { getWebCredsRows, isAdminPharmacyCode } from '../../../utils/webCreds';
+import { getWebCredsRows, isAdminPermission, resolveSessionPermissionState, resolveWebCredsColumnIndexes } from '../../../utils/webCreds';
 
 const MCO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ALL_CLIENTS_MCO_SPREADSHEET_ID;
-
-const COL_PHARMACY_CODE = 2;
-const COL_PHARMACY_NAME = 3;
-const COL_USERNAME = 4;
 
 const readSessionFromCookie = (cookieHeader) => {
   const cookie = cookieHeader || '';
@@ -17,9 +13,8 @@ const readSessionFromCookie = (cookieHeader) => {
 };
 
 const isSessionAdmin = (session) => {
-  if (!session) return false;
-  if (typeof session.isAdmin === 'boolean') return session.isAdmin;
-  return isAdminPharmacyCode(session.pharmacyCode);
+  const resolved = resolveSessionPermissionState(session);
+  return resolved.isAdmin;
 };
 
 export default async function handler(req, res) {
@@ -35,14 +30,16 @@ export default async function handler(req, res) {
 
   try {
     const rows = await getWebCredsRows(MCO_SPREADSHEET_ID);
+    const columns = resolveWebCredsColumnIndexes(rows);
     const clients = (Array.isArray(rows) ? rows : [])
-      .filter(r => Array.isArray(r) && r.length > COL_USERNAME)
+      .filter(r => Array.isArray(r) && r.length > columns.username)
       .map((row) => ({
-        pharmacyCode: row[COL_PHARMACY_CODE] !== undefined ? String(row[COL_PHARMACY_CODE]) : '',
-        pharmacyName: row[COL_PHARMACY_NAME] !== undefined ? String(row[COL_PHARMACY_NAME]).trim() : '',
-        username: row[COL_USERNAME] !== undefined ? String(row[COL_USERNAME]).trim() : '',
+        pharmacyCode: row[columns.pharmacyCode] !== undefined ? String(row[columns.pharmacyCode]) : '',
+        pharmacyName: row[columns.pharmacyName] !== undefined ? String(row[columns.pharmacyName]).trim() : '',
+        username: row[columns.username] !== undefined ? String(row[columns.username]).trim() : '',
+        isAdmin: isAdminPermission(row, { columns }),
       }))
-      .filter(client => client.pharmacyName && client.username && !isAdminPharmacyCode(client.pharmacyCode))
+      .filter(client => client.pharmacyName && client.username && !client.isAdmin)
       .sort((a, b) => a.pharmacyName.localeCompare(b.pharmacyName));
 
     return res.status(200).json({ clients });

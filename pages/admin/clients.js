@@ -6,8 +6,11 @@ import Breadcrumbs from '../../components/Breadcrumbs';
 
 const isAdminSession = (session) => {
   if (!session) return false;
-  if (typeof session.isAdmin === 'boolean') return session.isAdmin;
-  return (session.pharmacyCode || '').toString().replace(/^TEST\s*/i, '').trim().toLowerCase() === 'admin';
+  return (session.permission || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ') === 'admin';
 };
 
 export default function AdminClients() {

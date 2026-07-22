@@ -8,13 +8,24 @@ export default function Navbar() {
   const [pharmacyName, setPharmacyName] = useState('');
   const [hasSession, setHasSession] = useState(false);
   const [hasClientSpreadsheetId, setHasClientSpreadsheetId] = useState(false);
+  const [showPharmacyMenu, setShowPharmacyMenu] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isPharmacyGroupAdmin, setIsPharmacyGroupAdmin] = useState(false);
   const [actingAsPharmacyName, setActingAsPharmacyName] = useState('');
   const [actingAsUsername, setActingAsUsername] = useState('');
 
-  const isAdminPharmacyCode = (value) => {
-    const normalized = (value || '').toString().replace(/^TEST\s*/i, '').trim().toLowerCase();
-    return normalized === 'admin';
+  const normalizePermission = (value) => (value || '').toString().trim().toLowerCase().replace(/^TEST\s*/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+
+  const isPharmacyGroupAdminPermission = (value) => {
+    const normalized = normalizePermission(value);
+    if (!normalized) return false;
+    return (
+      normalized === 'pharmacy group admin' ||
+      normalized === 'group admin' ||
+      normalized === 'pharmacy_group_admin' ||
+      normalized === 'groupadmin' ||
+      (normalized.includes('group') && normalized.includes('admin'))
+    );
   };
 
   const applySessionState = (s) => {
@@ -22,16 +33,42 @@ export default function Navbar() {
       setPharmacyName('');
       setHasSession(false);
       setHasClientSpreadsheetId(false);
+      setShowPharmacyMenu(false);
       setIsAdmin(false);
+      setIsPharmacyGroupAdmin(false);
       setActingAsPharmacyName('');
       setActingAsUsername('');
       return;
     }
 
+    const permission = normalizePermission(s.permission);
+    const sessionIsAdmin = Boolean(s.isAdmin) || permission === 'admin';
+    const sessionIsGroupAdmin = Boolean(s.isPharmacyGroupAdmin) || isPharmacyGroupAdminPermission(permission);
+    const resolveClientSpreadsheetId = (session) => {
+      const rawCandidates = [
+        session?.clientSpreadsheet?.spreadsheetId,
+        session?.stockSpreadsheetId,
+        session?.clientSpreadsheetId,
+        session?.clientSpreadsheet?.spreadsheetId?.trim?.(),
+      ];
+
+      for (const candidate of rawCandidates) {
+        if (typeof candidate === 'string') {
+          const trimmed = candidate.trim();
+          if (trimmed) return trimmed;
+        }
+      }
+      return '';
+    };
+    const hasClientSpreadsheet = !!resolveClientSpreadsheetId(s);
+    const canShowPharmacyMenu = !!s;
+
     setPharmacyName(s.pharmacyName || '');
     setHasSession(true);
-    setHasClientSpreadsheetId(!!s.clientSpreadsheet?.spreadsheetId);
-    setIsAdmin(typeof s.isAdmin === 'boolean' ? s.isAdmin : isAdminPharmacyCode(s.pharmacyCode));
+    setHasClientSpreadsheetId(hasClientSpreadsheet);
+    setIsAdmin(sessionIsAdmin);
+    setIsPharmacyGroupAdmin(sessionIsGroupAdmin);
+    setShowPharmacyMenu(canShowPharmacyMenu);
     setActingAsPharmacyName(s.adminSession ? (s.pharmacyName || '') : '');
     setActingAsUsername(s.adminSession ? (s.username || '') : '');
   };
@@ -48,8 +85,8 @@ export default function Navbar() {
           console.debug('[Navbar] no server session');
           return;
         }
+        console.log('[Navbar] loaded session from server', s);
         applySessionState(s);
-        console.debug('[Navbar] loaded session from server', s);
       } catch (err) {
         console.debug('[Navbar] error loading session from server', err);
         applySessionState(null);
@@ -147,7 +184,7 @@ export default function Navbar() {
           <ul className="navbar-nav ms-auto">
             {hasSession && (
               <>
-                {hasClientSpreadsheetId && (
+                {showPharmacyMenu && (
                   <>
                     <li className="nav-item dropdown">
                       <button
@@ -167,36 +204,43 @@ export default function Navbar() {
                         <li>
                           <Link href="/monthly_orders" className="dropdown-item">Monthly Orders</Link>
                         </li>
+                        {isPharmacyGroupAdmin ? (
+                          <li>
+                            <Link href="/orders/group_orders" className="dropdown-item">Group Orders</Link>
+                          </li>
+                        ) : null}
                       </ul>
                     </li>
-                    <li className="nav-item dropdown">
-                      <button
-                        type="button"
-                        className="nav-link dropdown-toggle btn btn-link"
-                        id="inventoryDropdown"
-                        data-bs-toggle="dropdown"
-                        aria-expanded="false"
-                        style={{textDecoration: 'none'}}
-                      >
-                        Inventory
-                      </button>
-                      <ul className="dropdown-menu dropdown-menu-dark" aria-labelledby="inventoryDropdown">
-                        <li>
-                          <Link href="/usage" className="dropdown-item">Usage</Link>
-                        </li>
-                        <li>
-                          <Link href="/stock_count" className="dropdown-item">Stock Count</Link>
-                        </li>
-                        <li>
-                          <Link href="/transfers" className="dropdown-item">Transfers</Link>
-                        </li>
-                        <li>
-                          <Link href="/excess_stock" className="dropdown-item">Excess Stock</Link>
-                        </li>
-                      </ul>
-                    </li>
+                    {hasClientSpreadsheetId ? (
+                      <li className="nav-item dropdown">
+                        <button
+                          type="button"
+                          className="nav-link dropdown-toggle btn btn-link"
+                          id="inventoryDropdown"
+                          data-bs-toggle="dropdown"
+                          aria-expanded="false"
+                          style={{textDecoration: 'none'}}
+                        >
+                          Inventory
+                        </button>
+                        <ul className="dropdown-menu dropdown-menu-dark" aria-labelledby="inventoryDropdown">
+                          <li>
+                            <Link href="/usage" className="dropdown-item">Usage</Link>
+                          </li>
+                          <li>
+                            <Link href="/stock_count" className="dropdown-item">Stock Count</Link>
+                          </li>
+                          <li>
+                            <Link href="/transfers" className="dropdown-item">Transfers</Link>
+                          </li>
+                          <li>
+                            <Link href="/excess_stock" className="dropdown-item">Excess Stock</Link>
+                          </li>
+                        </ul>
+                      </li>
+                    ) : null}
                   </>
-                )}
+                    )}
                 {isAdmin && (
                   <li className="nav-item dropdown">
                     <button
@@ -206,13 +250,15 @@ export default function Navbar() {
                       data-bs-toggle="dropdown"
                       aria-expanded="false"
                       style={{textDecoration: 'none'}}
-                    >
+                      >
                       Admin
                       </button>
                       <ul className="dropdown-menu dropdown-menu-dark" aria-labelledby="adminDropdown">
-                        <li>
-                          <Link href="/admin/clients" className="dropdown-item">Clients</Link>
-                        </li>
+                        {isAdmin && (
+                          <li>
+                            <Link href="/admin/clients" className="dropdown-item">Clients</Link>
+                          </li>
+                        )}
                         <li>
                           <Link href="/admin/master_orders" className="dropdown-item">Master Orders</Link>
                         </li>

@@ -1,4 +1,4 @@
-import { isAdminPharmacyCode } from '../../../utils/webCreds';
+import { resolveSessionPermissionState } from '../../../utils/webCreds';
 
 const readSessionFromCookie = (cookieHeader) => {
   const cookie = cookieHeader || '';
@@ -11,9 +11,8 @@ const readSessionFromCookie = (cookieHeader) => {
 };
 
 const isSessionAdmin = (session) => {
-  if (!session) return false;
-  if (typeof session.isAdmin === 'boolean') return session.isAdmin;
-  return isAdminPharmacyCode(session.pharmacyCode);
+  const resolved = resolveSessionPermissionState(session);
+  return resolved.isAdmin;
 };
 
 const setSessionCookie = (res, session) => {
@@ -35,9 +34,13 @@ export default async function handler(req, res) {
 
   if (!session.adminSession) return res.status(400).json({ message: 'Not currently impersonating' });
 
+  const restoredSessionState = resolveSessionPermissionState(session.adminSession);
   const restoredSession = {
     ...session.adminSession,
-    isAdmin: true,
+    permission: restoredSessionState.permission,
+    isAdmin: restoredSessionState.isAdmin,
+    isPharmacyGroupAdmin: restoredSessionState.isPharmacyGroupAdmin,
+    canAccessMasterOrders: restoredSessionState.canAccessMasterOrders,
     adminSession: null,
   };
 

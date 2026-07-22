@@ -1,10 +1,7 @@
 import { getSheetData } from '../../../utils/googleSheets';
-import { getWebCredsRows, isAdminPharmacyCode } from '../../../utils/webCreds';
+import { getWebCredsRows, isAdminPermission, resolveSessionPermissionState, resolveWebCredsColumnIndexes } from '../../../utils/webCreds';
 
 const MCO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ALL_CLIENTS_MCO_SPREADSHEET_ID;
-const COL_GROUP_CODE = 1;
-const COL_PHARMACY_CODE = 2;
-const COL_PHARMACY_NAME = 3;
 
 const normalizeCode = (value) => (value || '').toString().replace(/^TEST\s*/i, '').trim();
 
@@ -16,12 +13,6 @@ const readSessionFromCookie = (cookieHeader) => {
   const raw = match.split('=')[1] || '';
   const decoded = decodeURIComponent(raw);
   return JSON.parse(decoded || 'null');
-};
-
-const isSessionAdmin = (session) => {
-  if (!session) return false;
-  if (typeof session.isAdmin === 'boolean') return session.isAdmin;
-  return isAdminPharmacyCode(session.pharmacyCode);
 };
 
 const findColumnByHeader = (headers, headerName) => {
@@ -59,12 +50,21 @@ export default async function handler(req, res) {
 
   const session = readSessionFromCookie(req.headers.cookie);
   if (!session) return res.status(401).json({ message: 'Unauthorized' });
-  if (!isSessionAdmin(session)) return res.status(403).json({ message: 'Forbidden' });
+  const resolvedSession = resolveSessionPermissionState(session);
+  const scope = (req.query?.scope || '').toString().trim().toLowerCase();
+  const isGroupScope = scope === 'group';
+  const isMasterOrderAccessible = isGroupScope
+    ? (resolvedSession.isAdmin || resolvedSession.isPharmacyGroupAdmin)
+    : resolvedSession.isAdmin;
+  if (!isMasterOrderAccessible) return res.status(403).json({ message: 'Forbidden' });
   if (!MCO_SPREADSHEET_ID) {
     return res.status(500).json({ message: 'Missing NEXT_PUBLIC_ALL_CLIENTS_MCO_SPREADSHEET_ID' });
   }
 
   const adminSession = session.adminSession || session;
+  const actingAsRestrictedGroup = resolvedSession.isAdmin
+    ? null
+    : normalizeCode(adminSession?.groupCode || '');
   const spreadsheetId = adminSession?.allClientsSpreadsheet?.spreadsheetId || MCO_SPREADSHEET_ID;
   const worksheetName =
     adminSession?.allClientsSpreadsheet?.worksheetName ||
@@ -76,16 +76,21 @@ export default async function handler(req, res) {
     if (!Array.isArray(data) || data.length === 0) return res.status(200).json({ orders: [], filters: { pharmacyGroups: [], pharmacies: [], statuses: [] } });
 
     const webCredsRows = await getWebCredsRows(MCO_SPREADSHEET_ID);
+    const columns = resolveWebCredsColumnIndexes(webCredsRows);
     const pharmacyMap = new Map();
     const groupsByCode = new Map();
 
     for (const row of Array.isArray(webCredsRows) ? webCredsRows : []) {
       if (!row) continue;
-      const pharmacyCode = normalizeCode(row[COL_PHARMACY_CODE]);
-      const pharmacyName = (row[COL_PHARMACY_NAME] || '').toString().trim();
-      const groupCode = normalizeCode(row[COL_GROUP_CODE]);
+      const pharmacyCode = normalizeCode(row[columns.pharmacyCode]);
+      const pharmacyName = (row[columns.pharmacyName] || '').toString().trim();
+      const groupCode = normalizeCode(row[columns.groupCode]);
+      const isAdminUser = isAdminPermission(row, { columns });
+      const groupMatchesRestriction = actingAsRestrictedGroup ? groupCode === actingAsRestrictedGroup : true;
+
       if (!pharmacyCode || !pharmacyName) continue;
-      if (isAdminPharmacyCode(pharmacyCode)) continue;
+      if (!groupMatchesRestriction) continue;
+      if (isAdminUser) continue;
       pharmacyMap.set(pharmacyCode, {
         name: pharmacyName,
         groupCode,
@@ -119,6 +124,7 @@ export default async function handler(req, res) {
 
       const pharmacyCode = normalizeCode(rawPharmacyCode);
       const pharmacyMeta = pharmacyMap.get(pharmacyCode);
+      if (!pharmacyMeta && actingAsRestrictedGroup) return acc;
       const pharmacyName = pharmacyMeta?.name || rawPharmacyCode;
       const pharmacyGroup = pharmacyMeta?.groupCode || 'Ungrouped';
 
