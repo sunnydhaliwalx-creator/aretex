@@ -5,6 +5,34 @@ const MCO_SPREADSHEET_ID = process.env.NEXT_PUBLIC_ALL_CLIENTS_MCO_SPREADSHEET_I
 
 const normalizeCode = (value) => (value || '').toString().replace(/^TEST\s*/i, '').trim();
 
+const resolveGroupCodeFromSession = (rows, columns, session = {}) => {
+  const targetUsername = (session?.username || '').toString().trim().toLowerCase();
+  const targetPharmacyCode = normalizeCode(session?.pharmacyCode);
+  const targetPharmacyName = (session?.pharmacyName || '').toString().trim().toLowerCase();
+
+  if (!rows || !Array.isArray(rows) || rows.length === 0) return '';
+
+  for (const row of rows) {
+    if (!row) continue;
+
+    const rowUsername = (row[columns.username] || '').toString().trim().toLowerCase();
+    const rowPharmacyCode = normalizeCode(row[columns.pharmacyCode]);
+    const rowPharmacyName = (row[columns.pharmacyName] || '').toString().trim().toLowerCase();
+
+    const matchesSession =
+      (targetUsername && rowUsername && rowUsername === targetUsername) ||
+      (targetPharmacyCode && rowPharmacyCode && rowPharmacyCode === targetPharmacyCode) ||
+      (targetPharmacyName && rowPharmacyName && rowPharmacyName === targetPharmacyName);
+
+    if (!matchesSession) continue;
+
+    const candidate = normalizeCode(row[columns.groupCode]);
+    if (candidate) return candidate;
+  }
+
+  return '';
+};
+
 const readSessionFromCookie = (cookieHeader) => {
   const cookie = cookieHeader || '';
   const match = cookie.split(';').map(s => s.trim()).find(s => s.startsWith('aretex_session='));
@@ -62,9 +90,6 @@ export default async function handler(req, res) {
   }
 
   const adminSession = session.adminSession || session;
-  const actingAsRestrictedGroup = resolvedSession.isAdmin
-    ? null
-    : normalizeCode(adminSession?.groupCode || '');
   const spreadsheetId = adminSession?.allClientsSpreadsheet?.spreadsheetId || MCO_SPREADSHEET_ID;
   const worksheetName =
     adminSession?.allClientsSpreadsheet?.worksheetName ||
@@ -77,6 +102,10 @@ export default async function handler(req, res) {
 
     const webCredsRows = await getWebCredsRows(MCO_SPREADSHEET_ID);
     const columns = resolveWebCredsColumnIndexes(webCredsRows);
+    const resolvedSessionGroupCode = normalizeCode(adminSession?.groupCode || resolveGroupCodeFromSession(webCredsRows, columns, adminSession));
+    const groupCodeRestriction = isGroupScope && !resolvedSession.isAdmin
+      ? resolvedSessionGroupCode
+      : null;
     const pharmacyMap = new Map();
     const groupsByCode = new Map();
 
@@ -86,10 +115,9 @@ export default async function handler(req, res) {
       const pharmacyName = (row[columns.pharmacyName] || '').toString().trim();
       const groupCode = normalizeCode(row[columns.groupCode]);
       const isAdminUser = isAdminPermission(row, { columns });
-      const groupMatchesRestriction = actingAsRestrictedGroup ? groupCode === actingAsRestrictedGroup : true;
 
       if (!pharmacyCode || !pharmacyName) continue;
-      if (!groupMatchesRestriction) continue;
+      if (groupCodeRestriction !== null && groupCode !== groupCodeRestriction) continue;
       if (isAdminUser) continue;
       pharmacyMap.set(pharmacyCode, {
         name: pharmacyName,
@@ -124,9 +152,9 @@ export default async function handler(req, res) {
 
       const pharmacyCode = normalizeCode(rawPharmacyCode);
       const pharmacyMeta = pharmacyMap.get(pharmacyCode);
-      if (!pharmacyMeta && actingAsRestrictedGroup) return acc;
+      if (groupCodeRestriction !== null && pharmacyMeta?.groupCode !== groupCodeRestriction) return acc;
       const pharmacyName = pharmacyMeta?.name || rawPharmacyCode;
-      const pharmacyGroup = pharmacyMeta?.groupCode || 'Ungrouped';
+      const pharmacyGroup = pharmacyMeta?.groupCode || '';
 
       const rawDate = columnIndexes.date >= 0 ? row[columnIndexes.date] : null;
       const parsed = parseSheetsDate(rawDate);
@@ -161,8 +189,15 @@ export default async function handler(req, res) {
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
 
-    const groupOptions = Array.from(new Set(Array.from(pharmacyCodeSet.keys()).map((pharmacyCode) => groupsByCode.get(pharmacyCode) || 'Ungrouped')))
+    const groupOptions = Array.from(new Set(
+      Array.from(pharmacyCodeSet.keys())
+        .map((pharmacyCode) => groupsByCode.get(pharmacyCode))
+        .filter((groupCode) => (groupCode || '').toString().trim())
+    ))
       .map(groupCode => ({ value: groupCode, label: groupCode }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    const webCredsPharmacyOptions = Array.from(pharmacyMap.entries())
+      .map(([value, { name, groupCode }]) => ({ value, label: name, groupCode }))
       .sort((a, b) => a.label.localeCompare(b.label));
 
     const sortedStatuses = Array.from(statusSet).sort((a, b) => a.localeCompare(b));
@@ -173,7 +208,7 @@ export default async function handler(req, res) {
       orders,
       filters: {
         pharmacyGroups: groupOptions,
-        pharmacies: pharmacyOptions,
+        pharmacies: webCredsPharmacyOptions,
         statuses: sortedStatuses,
       },
     });

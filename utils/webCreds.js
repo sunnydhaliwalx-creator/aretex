@@ -35,7 +35,13 @@ const resolveColumnIndexes = (rows) => {
 
   return {
     file: findIndex(['file']),
-    groupCode: findIndex(['group code', 'groupcode']),
+    groupCode: findIndex([
+      'group code',
+      'groupcode',
+      'pharmacy group code',
+      'pharmacygroupcode',
+      'pharmacy group',
+    ]),
     pharmacyCode: findIndex(['pharmacy code', 'pharmacycode']),
     pharmacyName: findIndex(['pharmacy name', 'pharmacyname']),
     username: findIndex(['username', 'user name']),

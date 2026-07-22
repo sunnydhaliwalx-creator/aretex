@@ -43,6 +43,8 @@ const canAccessGroupOrders = (session) => {
   return session.isPharmacyGroupAdmin === true || isPharmacyGroupAdminPermission(session.permission);
 };
 
+const normalizeCode = (value) => (value || '').toString().replace(/^TEST\s*/i, '').trim();
+
 const toStartOfDay = (dateObj) => {
   const date = new Date(dateObj);
   date.setHours(0, 0, 0, 0);
@@ -228,6 +230,7 @@ export default function GroupOrders() {
   const [customRangeStart, setCustomRangeStart] = useState('');
   const [customRangeEnd, setCustomRangeEnd] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
+  const [userGroupCode, setUserGroupCode] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -255,10 +258,26 @@ export default function GroupOrders() {
         const payload = await ordersRes.json();
         const filters = payload?.filters || {};
         const list = Array.isArray(payload?.orders) ? payload.orders : [];
+        const sessionGroupCode = normalizeCode(session?.groupCode);
+        const sessionPharmacyCode = normalizeCode(session?.pharmacyCode);
         const statusList = Array.isArray(filters.statuses) ? filters.statuses : [];
+        const filterPharmacies = Array.isArray(filters.pharmacies) ? filters.pharmacies : [];
+        const inferredGroupCode = filterPharmacies
+          .find((option) => normalizeCode(option?.value) === sessionPharmacyCode)?.groupCode || sessionGroupCode;
+        const normalizedInferredGroupCode = normalizeCode(inferredGroupCode);
+        const groupScopedFilterPharmacies = filterPharmacies
+          .filter((option) => normalizeCode(option?.groupCode) === normalizedInferredGroupCode)
+          .map(({ groupCode, ...option }) => option);
+        const scopedOrders = list.filter((order) => normalizeCode(order?.pharmacyGroup) === normalizedInferredGroupCode);
 
-        setOrders(list);
-        setPharmacyOptions(Array.isArray(filters.pharmacies) ? filters.pharmacies : []);
+        setOrders(scopedOrders);
+        setUserGroupCode(normalizedInferredGroupCode);
+        const scopedPharmacies = scopedOrders
+          .map((order) => ({ value: order.pharmacyCode, label: order.pharmacyName }))
+          .filter((item, index, array) => index === array.findIndex((entry) => entry.value === item.value))
+          .sort((a, b) => a.label.localeCompare(b.label));
+
+        setPharmacyOptions(groupScopedFilterPharmacies.length > 0 ? groupScopedFilterPharmacies : scopedPharmacies);
         setStatusOptions(statusList
           .filter((value) => (value || '').toString().trim())
           .map((value) => ({ value, label: value })));
@@ -295,17 +314,18 @@ export default function GroupOrders() {
     return orders.filter((order) => {
       const matchesPharmacy = selectedPharmacies.length === 0 || selectedPharmacies.includes(order.pharmacyCode || '');
       const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(order.status || '');
-      const matchesUrgent = selectedUrgents.length === 0 || selectedUrgents.includes(order.urgent ? 'yes' : 'no');
-      const orderDateMs = Number(order.dateMs);
-      const matchesDate = isDateInRange(orderDateMs, {
-        selectedDateRanges,
-        customRangeStart,
-        customRangeEnd,
-      });
-
-      return matchesPharmacy && matchesStatus && matchesUrgent && matchesDate;
+    const matchesUrgent = selectedUrgents.length === 0 || selectedUrgents.includes(order.urgent ? 'yes' : 'no');
+    const orderDateMs = Number(order.dateMs);
+    const matchesDate = isDateInRange(orderDateMs, {
+      selectedDateRanges,
+      customRangeStart,
+      customRangeEnd,
     });
-  }, [orders, selectedPharmacies, selectedStatuses, selectedUrgents, selectedDateRanges, customRangeStart, customRangeEnd]);
+      const matchesGroup = normalizeCode(order.pharmacyGroup) === userGroupCode;
+
+      return matchesGroup && matchesPharmacy && matchesStatus && matchesUrgent && matchesDate;
+    });
+  }, [orders, selectedPharmacies, selectedStatuses, selectedUrgents, selectedDateRanges, customRangeStart, customRangeEnd, userGroupCode]);
 
   const sortedOrders = useMemo(() => {
     if (!sortConfig.key) return filteredOrders;
@@ -460,7 +480,6 @@ export default function GroupOrders() {
                   <thead className="table-light">
                     <tr className="text-center small">
                       <th>{renderSortHeader('Date', 'date')}</th>
-                      <th>{renderSortHeader('Pharmacy Group', 'group')}</th>
                       <th>{renderSortHeader('Pharmacy', 'pharmacy')}</th>
                       <th>{renderSortHeader('Item', 'item')}</th>
                       <th>{renderSortHeader('Qty', 'qty')}</th>
@@ -479,7 +498,6 @@ export default function GroupOrders() {
                       sortedOrders.map((order, index) => (
                         <tr key={`${order.pharmacyCode || 'pharmacy'}-${index}`}>
                           <td className="small text-nowrap">{order.dateText || ''}</td>
-                          <td>{order.pharmacyGroup}</td>
                           <td>{order.pharmacyName}</td>
                           <td>{order.item || ''}</td>
                           <td className="text-center">{order.qty}</td>
