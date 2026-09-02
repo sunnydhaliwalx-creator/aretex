@@ -434,7 +434,8 @@ export default function StockCount() {
                     <div className="mb-0">
                       <div className="small text-muted">
                         <span>Monthly Usage: {item.usage}</span>
-                        <span className="ms-3">
+                        <span className="mx-2">|</span>
+                        <span>
                           Last Documented In Stock: {(item.originalStock === '' || item.originalStock === null || item.originalStock === undefined) ? '__' : item.originalStock}
                         </span>
                       </div>

@@ -30,9 +30,11 @@ export default async function handler(req, res) {
 
   const session = readSessionFromCookie(req.headers.cookie);
   if (!session) return res.status(401).json({ message: 'Unauthorized' });
-  if (!isSessionAdmin(session)) return res.status(403).json({ message: 'Forbidden' });
-
   if (!session.adminSession) return res.status(400).json({ message: 'Not currently impersonating' });
+  // While acting as a client, the active session is deliberately non-admin.
+  // Authorize this operation using the preserved session that started the
+  // impersonation instead of the client session currently in the cookie.
+  if (!isSessionAdmin(session.adminSession)) return res.status(403).json({ message: 'Forbidden' });
 
   const restoredSessionState = resolveSessionPermissionState(session.adminSession);
   const restoredSession = {

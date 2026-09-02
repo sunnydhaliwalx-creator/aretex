@@ -148,3 +148,74 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
+
+## Supplier Price Requests (Cloud SQL / PostgreSQL)
+
+Supplier price request data is stored in:
+- `price_requests`
+- `price_request_items`
+
+These tables live in the same PostgreSQL database/schema used for `supplier_prices`.
+
+Current production schema details we use:
+
+```sql
+CREATE TABLE price_requests (
+  id SERIAL PRIMARY KEY,
+  request_date TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  supplier VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE price_request_items (
+  id BIGSERIAL PRIMARY KEY,
+  price_request_id INT NOT NULL,
+  item_description TEXT NOT NULL,
+  specific_pharmacy VARCHAR(255) NULL,
+  price NUMERIC(12,2) NULL,
+  is_oos BOOLEAN NULL,
+  submitted_datetime TIMESTAMP(6) NULL,
+  CONSTRAINT fk_price_requests
+    FOREIGN KEY (price_request_id)
+    REFERENCES price_requests (id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX idx_price_requests_supplier
+  ON price_requests (supplier);
+
+CREATE INDEX idx_price_requests_request_date
+  ON price_requests (request_date);
+
+CREATE INDEX idx_price_request_items_request_id
+  ON price_request_items (price_request_id);
+```
+
+To create these tables in the existing Cloud SQL database that already has `supplier_prices`, configure one of:
+- `DATABASE_URL` (recommended), or:
+- `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+
+Then call the admin endpoint:
+- `GET /api/admin/supplier_price_requests_schema`
+
+The endpoint returns a read-only status check indicating whether `supplier_prices`, `price_requests`, and `price_request_items` exist in the connected schema.
+
+Create/modify tables using your DB tooling outside of this app.
+
+Example query to validate data:
+
+```sql
+SELECT
+  pr.id AS price_request_id,
+  pr.supplier,
+  pri.id AS price_request_item_id,
+  pri.item_description,
+  pri.specific_pharmacy,
+  pri.price,
+  pri.is_oos,
+  pr.request_date
+FROM price_requests pr
+JOIN price_request_items pri
+  ON pri.price_request_id = pr.id
+WHERE pr.supplier = 'Nupharm'
+ORDER BY pr.id, pri.id;
+```
