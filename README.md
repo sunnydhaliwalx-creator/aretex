@@ -157,6 +157,11 @@ Supplier price request data is stored in:
 
 These tables live in the same PostgreSQL database/schema used for `supplier_prices`.
 
+Out-of-stock events are stored in `supplier_oos_status`. The application
+considers a matching supplier/item/pharmacy combination out of stock when its
+latest `created_at` event is newer than its latest `supplier_prices.date_created`
+row. A newer supplier price row clears the OOS state.
+
 Current production schema details we use:
 
 ```sql
@@ -180,6 +185,15 @@ CREATE TABLE price_request_items (
     ON DELETE CASCADE
 );
 
+CREATE TABLE supplier_oos_status (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  supplier TEXT,
+  sub_supplier TEXT,
+  item_description TEXT,
+  pharmacy_specific TEXT
+);
+
 CREATE INDEX idx_price_requests_supplier
   ON price_requests (supplier);
 
@@ -197,7 +211,7 @@ To create these tables in the existing Cloud SQL database that already has `supp
 Then call the admin endpoint:
 - `GET /api/admin/supplier_price_requests_schema`
 
-The endpoint returns a read-only status check indicating whether `supplier_prices`, `price_requests`, and `price_request_items` exist in the connected schema.
+The endpoint returns a read-only status check indicating whether `supplier_prices`, `supplier_oos_status`, `price_requests`, and `price_request_items` exist in the connected schema.
 
 Create/modify tables using your DB tooling outside of this app.
 

@@ -1,6 +1,24 @@
 -- Supplier price request tables (PostgreSQL)
 -- Run in the same database that already has supplier_prices.
 
+CREATE TABLE IF NOT EXISTS supplier_oos_status (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  supplier TEXT,
+  sub_supplier TEXT,
+  item_description TEXT,
+  pharmacy_specific TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_supplier_oos_status_match
+  ON supplier_oos_status (
+    item_description,
+    supplier,
+    sub_supplier,
+    pharmacy_specific,
+    created_at DESC
+  );
+
 CREATE TABLE IF NOT EXISTS price_requests (
   id SERIAL PRIMARY KEY,
   request_date TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),

@@ -1,3 +1,5 @@
+import pg from 'pg';
+
 let pgPromise;
 
 const normalizeSsl = (value) => {
@@ -64,14 +66,10 @@ const buildPoolConfig = () => {
 };
 
 let pool;
-let schemaSetupPromise;
 
 const loadPg = async () => {
   if (pgPromise) return pgPromise;
-  const dynamicImport = new Function('specifier', 'return import(specifier);');
-  pgPromise = dynamicImport('pg').catch((error) => {
-    throw new Error('pg is not installed. Add pg dependency before using supplier price request APIs.');
-  });
+  pgPromise = Promise.resolve(pg);
   return pgPromise;
 };
 
@@ -123,97 +121,6 @@ const executeWithConnection = async (connection, sql, params = []) => {
   return connection.query(pgSql, params);
 };
 
-export const ensurePriceRequestSchema = async () => {
-  if (schemaSetupPromise) return schemaSetupPromise;
-
-  schemaSetupPromise = (async () => {
-    const poolInstance = await getPool();
-    const connection = await poolInstance.connect();
-    try {
-      const existingPriceRequests = ((
-        await connection.query(`
-          SELECT 1 AS found
-          FROM information_schema.tables
-          WHERE table_schema = current_schema()
-            AND table_name = 'price_requests'
-          LIMIT 1
-        `)
-      ).rows || []).length > 0;
-
-      const existingPriceRequestItems = ((
-        await connection.query(`
-          SELECT 1 AS found
-          FROM information_schema.tables
-          WHERE table_schema = current_schema()
-            AND table_name = 'price_request_items'
-          LIMIT 1
-        `)
-      ).rows || []).length > 0;
-
-      if (!existingPriceRequests) {
-        await connection.query(`
-          CREATE TABLE price_requests (
-            id SERIAL PRIMARY KEY,
-            request_date TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-            supplier VARCHAR(255) NOT NULL
-          );
-        `);
-
-        await connection.query(`
-          CREATE INDEX idx_price_requests_supplier
-          ON price_requests (supplier);
-        `);
-
-        await connection.query(`
-          CREATE INDEX idx_price_requests_request_date
-          ON price_requests (request_date);
-        `);
-      }
-
-      if (!existingPriceRequestItems) {
-        await connection.query(`
-          CREATE TABLE price_request_items (
-            id BIGSERIAL PRIMARY KEY,
-            price_request_id INT NOT NULL,
-            item_description TEXT NOT NULL,
-            specific_pharmacy VARCHAR(255) NULL,
-            price NUMERIC(12,2) NULL,
-            is_oos BOOLEAN NULL,
-            submitted_datetime TIMESTAMP(6) NULL,
-            CONSTRAINT fk_price_requests
-              FOREIGN KEY (price_request_id)
-              REFERENCES price_requests (id)
-              ON DELETE CASCADE
-          );
-        `);
-
-        await connection.query(`
-          CREATE INDEX idx_price_request_items_request_id
-          ON price_request_items (price_request_id);
-        `);
-      }
-
-      const supplierPricesRows = (
-        await connection.query(`
-          SELECT 1 AS found
-          FROM information_schema.tables
-          WHERE table_schema = current_schema()
-            AND table_name = 'supplier_prices'
-          LIMIT 1
-        `)
-      ).rows;
-      if (!Array.isArray(supplierPricesRows) || supplierPricesRows.length === 0) {
-        throw new Error("Expected existing table 'supplier_prices' not found in this database");
-      }
-    } finally {
-      connection.release();
-    }
-  })();
-
-  await schemaSetupPromise;
-  return true;
-};
-
 export const getOutstandingPriceRequests = async () => {
   const rows = await execute(`
     SELECT
@@ -262,6 +169,16 @@ export const getPriceRequestDbStatus = async () => {
       `)
     ).rows;
 
+    const supplierOosStatusRows = (
+      await connection.query(`
+        SELECT 1 AS found
+        FROM information_schema.tables
+        WHERE table_schema = current_schema()
+          AND table_name = 'supplier_oos_status'
+        LIMIT 1
+      `)
+    ).rows;
+
     const priceRequestRows = (
       await connection.query(`
         SELECT 1 AS found
@@ -287,6 +204,7 @@ export const getPriceRequestDbStatus = async () => {
       db_host: dbNameRows?.[0]?.db_host || '',
       db_version: dbNameRows?.[0]?.db_version || '',
       supplier_prices_exists: supplierPriceRows.length > 0,
+      supplier_oos_status_exists: supplierOosStatusRows.length > 0,
       price_requests_exists: priceRequestRows.length > 0,
       price_request_items_exists: priceRequestItemRows.length > 0,
     };
@@ -367,6 +285,9 @@ export const updateSupplierPriceResponses = async (priceRequestId, supplier, res
   try {
     await connection.query('BEGIN');
     let updated = 0;
+    let priceRecordsCreated = 0;
+    let oosStatusRowsCreated = 0;
+    const submittedItemIds = new Set();
 
     for (const item of responses) {
       const itemId = Number(item?.id);
@@ -374,10 +295,30 @@ export const updateSupplierPriceResponses = async (priceRequestId, supplier, res
         throw new Error('Invalid price_request_item_id in submission');
       }
 
+      if (submittedItemIds.has(itemId)) {
+        throw new Error(`Item ${itemId} was submitted more than once`);
+      }
+      submittedItemIds.add(itemId);
+
       const normalizedPrice = normalizePrice(item.price);
       const isOos = normalizeBoolean(item.is_oos);
       if (normalizedPrice === null && isOos === null) {
         throw new Error(`Item ${itemId} is missing both price and is_oos`);
+      }
+
+      const itemRows = await executeWithConnection(connection, `
+        SELECT
+          pri.item_description,
+          pri.specific_pharmacy
+        FROM price_request_items pri
+        WHERE pri.id = ?
+          AND pri.price_request_id = ?
+        LIMIT 1
+      `, [itemId, request.id]);
+
+      const requestItem = itemRows?.rows?.[0];
+      if (!requestItem) {
+        throw new Error(`Item ${itemId} was not found for this price request`);
       }
 
       const dbIsOos = isOos;
@@ -402,11 +343,66 @@ export const updateSupplierPriceResponses = async (priceRequestId, supplier, res
         throw new Error(`Item ${itemId} was not found for this price request`);
       }
       updated += result.rowCount;
+
+      await executeWithConnection(connection, `
+        INSERT INTO supplier_prices (
+          date_created,
+          supplier,
+          sub_supplier,
+          price_type,
+          item_description,
+          pharmacy_specific,
+          price,
+          record_source
+        )
+        VALUES (
+          CURRENT_DATE,
+          ?,
+          '',
+          'PriceList',
+          ?,
+          ?,
+          ?,
+          'Landing Page'
+        )
+      `, [
+        request.supplier,
+        requestItem.item_description,
+        requestItem.specific_pharmacy || '',
+        dbPrice,
+      ]);
+      priceRecordsCreated += 1;
+
+      if (isOos === true) {
+        await executeWithConnection(connection, `
+          INSERT INTO supplier_oos_status (
+            created_at,
+            supplier,
+            sub_supplier,
+            item_description,
+            pharmacy_specific
+          )
+          VALUES (
+            CURRENT_TIMESTAMP(6),
+            ?,
+            '',
+            ?,
+            ?
+          )
+        `, [
+          request.supplier,
+          requestItem.item_description,
+          requestItem.specific_pharmacy || '',
+        ]);
+        oosStatusRowsCreated += 1;
+      }
     }
 
     await connection.query('COMMIT');
     return {
       updated_rows: updated,
+      supplier_price_rows_created: priceRecordsCreated,
+      supplier_oos_status_rows_created: oosStatusRowsCreated,
       price_request_id: request.id,
       supplier: request.supplier,
     };
