@@ -350,7 +350,7 @@ export const updateSupplierPriceResponses = async (priceRequestId, supplier, res
         INSERT INTO supplier_prices (
           date_created,
           supplier,
-          sub_supplier,
+          platform,
           price_type,
           item_description,
           pharmacy_specific,
@@ -380,7 +380,7 @@ export const updateSupplierPriceResponses = async (priceRequestId, supplier, res
           INSERT INTO supplier_oos_status (
             created_at,
             supplier,
-            sub_supplier,
+            platform,
             item_description,
             pharmacy_specific
           )

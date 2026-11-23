@@ -189,7 +189,7 @@ CREATE TABLE supplier_oos_status (
   id BIGSERIAL PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   supplier TEXT,
-  sub_supplier TEXT,
+  platform TEXT,
   item_description TEXT,
   pharmacy_specific TEXT
 );

@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS supplier_oos_status (
   id BIGSERIAL PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   supplier TEXT,
-  sub_supplier TEXT,
+  platform TEXT,
   item_description TEXT,
   pharmacy_specific TEXT
 );
@@ -14,7 +14,7 @@ CREATE INDEX IF NOT EXISTS idx_supplier_oos_status_match
   ON supplier_oos_status (
     item_description,
     supplier,
-    sub_supplier,
+    platform,
     pharmacy_specific,
     created_at DESC
   );
