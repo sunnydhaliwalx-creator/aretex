@@ -217,7 +217,8 @@ export const getPriceRequestForLanding = async (priceRequestId, supplier) => {
   const requestRows = await execute(`
     SELECT id, supplier, request_date
     FROM price_requests
-    WHERE id = ? AND supplier = ?
+    WHERE id = ?
+      AND LOWER(TRIM(supplier)) = LOWER(TRIM(?))
     LIMIT 1
   `, [priceRequestId, supplier]);
 
@@ -236,7 +237,7 @@ export const getPriceRequestForLanding = async (priceRequestId, supplier) => {
     FROM price_request_items pri
     JOIN price_requests pr
       ON pr.id = pri.price_request_id
-    WHERE pr.supplier = ?
+    WHERE LOWER(TRIM(pr.supplier)) = LOWER(TRIM(?))
       AND price IS NULL
       AND is_oos IS NULL
     ORDER BY pri.price_request_id ASC, pri.id ASC
@@ -247,7 +248,7 @@ export const getPriceRequestForLanding = async (priceRequestId, supplier) => {
     FROM price_request_items pri
     JOIN price_requests pr
       ON pr.id = pri.price_request_id
-    WHERE pr.supplier = ?
+    WHERE LOWER(TRIM(pr.supplier)) = LOWER(TRIM(?))
       AND price IS NULL
       AND is_oos IS NULL
   `, [supplier]);
@@ -267,7 +268,8 @@ export const updateSupplierPriceResponses = async (priceRequestId, supplier, res
   const requestRows = await execute(`
     SELECT id, supplier
     FROM price_requests
-    WHERE id = ? AND supplier = ?
+    WHERE id = ?
+      AND LOWER(TRIM(supplier)) = LOWER(TRIM(?))
     LIMIT 1
   `, [priceRequestId, supplier]);
 
@@ -335,7 +337,7 @@ export const updateSupplierPriceResponses = async (priceRequestId, supplier, res
             SELECT 1
             FROM price_requests pr
             WHERE pr.id = price_request_items.price_request_id
-              AND pr.supplier = ?
+              AND LOWER(TRIM(pr.supplier)) = LOWER(TRIM(?))
           )
       `, [dbPrice, dbIsOos, itemId, supplier]);
 
