@@ -27,7 +27,9 @@ export default async function handler(req, res) {
 
       const request = await getPriceRequestForLanding(priceRequestId, supplier);
       if (!request) {
-        return res.status(404).json({ message: 'Unauthorized Access. Please contact support' });
+        return res.status(404).json({
+          message: 'Could not find this price request, or this price request has expired.'
+        });
       }
 
       return res.status(200).json({ success: true, request });

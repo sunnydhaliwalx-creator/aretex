@@ -57,7 +57,9 @@ export default function SupplierPriceRequest() {
       const json = await res.json();
       if (!res.ok) {
         if (res.status === 404) {
-          throw new Error('Unauthorized Access. Please contact support');
+          throw new Error(
+            'Could not find this price request, or this price request has expired.'
+          );
         }
         throw new Error(json?.message || 'Unable to load price request');
       }

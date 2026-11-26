@@ -215,6 +215,15 @@ The endpoint returns a read-only status check indicating whether `supplier_price
 
 Create/modify tables using your DB tooling outside of this app.
 
+The production application role also needs permission to write OOS events. Run
+the following as the table owner or a database administrator (adjust the role
+name if `DB_USER` differs):
+
+```sql
+GRANT INSERT ON TABLE supplier_oos_status TO "web-app-env";
+GRANT USAGE, SELECT ON SEQUENCE supplier_oos_status_id_seq TO "web-app-env";
+```
+
 Example query to validate data:
 
 ```sql

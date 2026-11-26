@@ -19,6 +19,11 @@ CREATE INDEX IF NOT EXISTS idx_supplier_oos_status_match
     created_at DESC
   );
 
+-- Run these grants as the table owner or a database administrator.
+-- The application role must be able to insert OOS events and use the BIGSERIAL sequence.
+GRANT INSERT ON TABLE supplier_oos_status TO "web-app-env";
+GRANT USAGE, SELECT ON SEQUENCE supplier_oos_status_id_seq TO "web-app-env";
+
 CREATE TABLE IF NOT EXISTS price_requests (
   id SERIAL PRIMARY KEY,
   request_date TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
